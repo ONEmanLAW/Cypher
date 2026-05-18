@@ -36,10 +36,9 @@ const trailAngle = ref(0)
 /* ---------- données fixes (à brancher plus tard) ---------- */
 const streak = ref(4)
 const streakGoal = 8
-const loopCount = ref(4)
 const history = ref(['good', 'good', 'good', 'good', 'bad', 'empty', 'empty', 'empty'])
 const statusKind = ref('bad')          // good | warn | bad | idle
-const statusText = ref('Too late · −60ms')
+const statusText = ref('Too late · −60ms')   // EN
 
 /* 8 repères : position fixe + état */
 const tickStates = ref(['good', 'good', 'good', 'warn', 'good', 'good', 'bad', 'good'])
@@ -144,7 +143,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="exo-header-title">
         <div class="kicker">Exo 04 · Academy</div>
-        <div class="name">Métronome Simple</div>
+        <div class="name">Stay In Time</div>
       </div>
       <div class="exo-header-side right">
         <span class="exo-step">
@@ -214,8 +213,8 @@ onBeforeUnmount(() => {
               <div class="e04-streak">
                 <div class="e04-streak-num"><span class="x">×</span>{{ streak }}</div>
                 <p class="e04-streak-msg">
-                  Continue, ne casse pas la chaîne.
-                  <strong>Objectif : {{ streakGoal }} boucles consécutives.</strong>
+                  Keep going, don't break the chain.
+                  <strong>Goal: {{ streakGoal }} loops in a row.</strong>
                 </p>
               </div>
             </div>
@@ -223,7 +222,7 @@ onBeforeUnmount(() => {
             <!-- historique -->
             <div class="e04-block e04-history">
               <span class="mono-label">
-                Historique · {{ history.length }} dernières boucles
+                History · last {{ history.length }} loops
               </span>
               <div class="e04-history-dots">
                 <span
@@ -266,9 +265,6 @@ onBeforeUnmount(() => {
           ♪ Listen to the sound
         </button>
         <button class="footer-btn" type="button">ⓘ Tips</button>
-      </div>
-      <div class="exo-footer-info">
-        boucle <em>{{ loopCount }}/{{ streakGoal }}</em> · tolérance <em>±60ms</em>
       </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
@@ -357,15 +353,20 @@ onBeforeUnmount(() => {
 
 /* ===== stage ===== */
 .stage { flex: 1; display: flex; min-height: 0; }
-.stage-pad { flex: 1; display: flex; flex-direction: column; padding: 32px 40px; }
+.stage-pad {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 40px;
+}
 
 .e04-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 520px 1fr;
-  gap: 80px;
+  display: flex;
   align-items: center;
   justify-content: center;
+  gap: 64px;
+  width: 100%;
 }
 
 /* ===== orbite ===== */
@@ -557,13 +558,6 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
-.exo-footer-info {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-mono);
-  color: var(--fg-muted);
-}
-.exo-footer-info em { font-style: normal; color: var(--brand); }
 .footer-mic {
   display: inline-flex;
   align-items: center;
