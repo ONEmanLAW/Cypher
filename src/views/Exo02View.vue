@@ -1,20 +1,19 @@
 <script setup>
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 
 const router = useRouter()
 
-const target = 10
-const current = 7
-const segs = Array.from({ length: target }, (_, i) => i < current)
-const objectifs = ['×1', '×3', '×5', '×10', '×20']
+const objectifs = [1, 3, 5, 10, 20]
+const goal = ref(10)            // objectif sélectionné
+const current = 7               // répétitions faites
 
-// barres waveform : hauteur de base déterministe + délai pour l'anim
-let s = 31
-const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
-const waveBars = Array.from({ length: 48 }, (_, i) => ({
-  base: Math.round((0.2 + rnd() * 0.8) * 48),
-  delay: (i * 40) % 1200,
-}))
+const segs = computed(() =>
+  Array.from({ length: goal.value }, (_, i) => i < current)
+)
+
+const pad = (n) => String(n).padStart(2, '0')
 </script>
 
 <template>
@@ -23,20 +22,22 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
     <header class="exo-header">
       <div class="exo-header-side">
         <button class="exo-back" type="button" @click="router.push('/')">
-          ← Retour
+          ← Back
         </button>
-        <span class="exo-header-num">Son · <em>Kick Drum</em></span>
+        <span class="exo-header-num">Sound · <em>Kick Drum</em></span>
       </div>
       <div class="exo-header-title">
-        <div class="kicker">Exo 02 · Académie</div>
-        <div class="name">Écho · Série d'habitudes</div>
+        <div class="kicker">Exo 02 · Academy</div>
+        <div class="name">Echo Flow</div>
       </div>
       <div class="exo-header-side right">
         <span class="exo-step">
-          Étape <em>2/4</em> · Imitation
+          Step <em>2/6</em> · Imitation
           <span class="exo-step-dots">
             <span class="exo-step-dot done" />
             <span class="exo-step-dot curr" />
+            <span class="exo-step-dot" />
+            <span class="exo-step-dot" />
             <span class="exo-step-dot" />
             <span class="exo-step-dot" />
           </span>
@@ -47,30 +48,29 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
     <!-- stage -->
     <div class="stage">
       <div class="stage-pad">
-        <!-- objectif -->
+        <!-- goal -->
         <div class="e02-objectif-row">
-          <span class="mono-label">Objectif</span>
+          <span class="mono-label">Goal</span>
           <div class="chip-row">
             <button
               v-for="v in objectifs"
               :key="v"
-              :class="['chip', { active: v === '×10' }]"
+              :class="['chip', { active: v === goal }]"
               type="button"
+              @click="goal = v"
             >
-              {{ v }}
+              ×{{ v }}
             </button>
           </div>
-          <div style="flex: 1" />
-          <span class="mono-label">Tentative <em>01</em></span>
         </div>
 
-        <!-- compteur + jauge + feedback -->
+        <!-- counter + bar + feedback -->
         <div class="e02-center">
-          <div class="mono-label" style="letter-spacing: 0.4em">— Répète le son —</div>
+          <div class="mono-label" style="letter-spacing: 0.4em">— Repeat the sound —</div>
           <div class="e02-counter">
-            <span class="cur">07</span>
+            <span class="cur">{{ pad(current) }}</span>
             <span class="sep">/</span>
-            <span class="tgt">10</span>
+            <span class="tgt">{{ pad(goal) }}</span>
           </div>
           <div class="e02-bar">
             <div
@@ -80,14 +80,10 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
             />
           </div>
           <div class="e02-feedback">
-            <div class="waveform">
-              <span
-                v-for="(b, i) in waveBars"
-                :key="i"
-                :style="{ height: b.base + 'px', animationDelay: b.delay + 'ms' }"
-              />
+            <div class="e02-wave">
+              <BaseWaveform :bar-count="48" />
             </div>
-            <div class="e02-streak-badge">Good streak · ×5 d'affilée</div>
+            <div class="e02-streak-badge">Good streak · ×5 in a row</div>
           </div>
         </div>
       </div>
@@ -96,14 +92,13 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
     <!-- footer -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
-        <button class="footer-btn" type="button">↺ Revoir la démo</button>
-        <button class="footer-btn" type="button">♪ Écouter le son</button>
+        <button class="footer-btn" type="button">↺ Review the demo</button>
+        <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
-      <div class="exo-footer-info">session · <em>kick drum</em> · <em>×10</em></div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Passer →</button>
+        <button class="footer-cta" type="button">Skip →</button>
       </div>
     </footer>
   </div>
@@ -164,6 +159,7 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   letter-spacing: var(--ls-tag);
   text-transform: uppercase;
   color: var(--fg-muted);
+  margin-bottom: 6px;
 }
 .exo-header-title .name {
   font-family: var(--font-display);
@@ -171,7 +167,6 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
   line-height: var(--lh-tight);
-  margin-top: 2px;
 }
 .exo-step {
   font-family: var(--font-mono);
@@ -195,7 +190,7 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   padding: 32px 40px;
 }
 
-/* objectif row */
+/* goal row */
 .e02-objectif-row {
   display: flex;
   align-items: center;
@@ -210,7 +205,6 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-.mono-label em { font-style: normal; color: var(--fg-primary); }
 .chip-row { display: flex; gap: 8px; }
 .chip {
   background: transparent;
@@ -266,20 +260,7 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   align-items: center;
   gap: 16px;
 }
-
-/* waveform animée */
-.waveform { display: flex; align-items: center; gap: 2px; height: 48px; }
-.waveform span {
-  width: 3px;
-  background: var(--brand);
-  border-radius: 999px;
-  transform-origin: center;
-  animation: wave 1s ease-in-out infinite alternate;
-}
-@keyframes wave {
-  from { transform: scaleY(0.3); }
-  to   { transform: scaleY(1); }
-}
+.e02-wave { width: 280px; }
 
 /* badge streak qui pulse */
 .e02-streak-badge {
@@ -308,14 +289,6 @@ const waveBars = Array.from({ length: 48 }, (_, i) => ({
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
-.exo-footer-info {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-.exo-footer-info em { font-style: normal; color: var(--fg-primary); }
 .footer-mic {
   display: inline-flex;
   align-items: center;
