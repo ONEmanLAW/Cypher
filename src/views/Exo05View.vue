@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import Countdown from '@/components/ui/BaseCountdown.vue'
 
 const router = useRouter()
 
@@ -243,24 +244,14 @@ function playCall () {
   startRun()
 }
 
-/* compte à rebours 3·2·1 avant la phase de jeu */
-const countdown = ref(0)       // 0 = inactif, sinon 3 → 2 → 1
-let countdownTimer = null
+/* compte à rebours 3·2·1 : géré par le composant <Countdown> */
+const countdownEl = ref(null)
 
 function startYourTurn () {
   playerHits.value = []
   playedMode.value = modeOf(teacherGuide.value)   // fige le mode du run
   phase.value = 'play'
-  countdown.value = 3
-
-  clearInterval(countdownTimer)
-  countdownTimer = setInterval(() => {
-    countdown.value -= 1
-    if (countdown.value <= 0) {
-      clearInterval(countdownTimer)
-      startRun()               // le curseur démarre après le "1"
-    }
-  }, 700)
+  countdownEl.value.start()                       // startRun() sur @done
 }
 
 function retry () {
@@ -272,8 +263,7 @@ function retry () {
 function setDifficulty (key) {
   if (difficulty.value === key) return
   cancelAnimationFrame(rafId)
-  clearInterval(countdownTimer)
-  countdown.value = 0
+  countdownEl.value?.stop()
   isRunning.value = false
   difficulty.value = key
   playerHits.value = []
@@ -296,7 +286,6 @@ onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(rafId)
-  clearInterval(countdownTimer)
   if (audioCtx) audioCtx.close()
 })
 
@@ -346,10 +335,7 @@ const callLabel = computed(() =>
     <!-- stage -->
     <div class="stage">
       <!-- compte à rebours avant la phase de jeu -->
-      <div v-if="countdown > 0" class="e05-countdown">
-        <div class="e05-countdown-num" :key="countdown">{{ countdown }}</div>
-        <div class="e05-countdown-label">Get ready</div>
-      </div>
+      <Countdown ref="countdownEl" :from="3" @done="startRun" />
 
       <div class="stage-pad">
         <!-- mode tabs + difficulté -->
@@ -638,38 +624,6 @@ const callLabel = computed(() =>
 /* ===== stage ===== */
 .stage { flex: 1; display: flex; min-height: 0; position: relative; }
 
-/* ===== compte à rebours 3·2·1 ===== */
-.e05-countdown {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: rgba(11, 11, 12, 0.82);
-}
-.e05-countdown-num {
-  font-family: var(--font-display);
-  font-size: var(--t-counter);
-  line-height: 1;
-  color: var(--brand);
-  text-shadow: 0 0 40px rgba(255, 107, 26, 0.6);
-  animation: e05-count-pop 0.7s var(--ease-out-snap);
-}
-.e05-countdown-label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-tag);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-@keyframes e05-count-pop {
-  0%   { transform: scale(0.4); opacity: 0; }
-  35%  { transform: scale(1.1); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
 .stage-pad {
   flex: 1;
   display: flex;
