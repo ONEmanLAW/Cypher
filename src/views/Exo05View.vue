@@ -37,9 +37,9 @@ const PATTERNS = {
   },
   medium: {
     label: 'Medium',
-    cells: 18,
+    cells: 22,
     bpm: 60,
-    kicks: [0, 1, 3, 5, 6, 8, 11, 13, 15, 16, 17]
+    kicks: [2, 3, 5, 7, 8, 10, 13, 15, 17, 18, 19]
   },
   hard: {
     label: 'Hard',
