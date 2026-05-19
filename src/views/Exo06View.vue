@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -13,10 +13,10 @@ const SLOT_COUNT = 8
 const TARGET_INDEX = 4           // bottom slot = the user's slot
 const HIT_WINDOW_DEG = 26        // angular tolerance around target
 const PERFECT_WINDOW_DEG = 9     // tighter window = "perfect"
-const LOOPS_TO_WIN = 4
 const BPM = 80
 const LOOP_MS = (60_000 / BPM) * SLOT_COUNT
 const arcLength = 2 * Math.PI * (R - 12)
+const HISTORY_MAX = 8
 
 const SLOTS = [
   { i: 0, kind: 'coach',  label: 'HH' },
@@ -77,22 +77,31 @@ function playClick(freq = 440, dur = 0.06, type = 'square') {
 
 /* ---- reactive state --------------------------------------------------- */
 const mode = ref('pause')        // 'pause' | 'loop'
+const status = ref('idle')       // 'idle' | 'countdown' | 'running'
+const countdown = ref(3)
 const angle = ref(0)             // playhead clock angle 0..360
-const loopsDone = ref(0)
 const waiting = ref(false)
 const litSlot = ref(null)
-const feedback = reactive({ kind: 'idle', text: 'Hit SPACE on the orange slot' })
-
-const loopNum = computed(() => Math.min(loopsDone.value + 1, LOOPS_TO_WIN))
+const feedback = reactive({ kind: 'idle', text: 'Press start when ready' })
+const history = ref([])          // [{ kind: 'perfect'|'good'|'miss' }]
 
 /* ---- non-reactive loop refs ------------------------------------------ */
 let rafId = 0
+let cdTimer = 0
 let lastTs = 0
 let angleVal = 0
 let lastSlot = -1
 let hitThisLoop = false
 
-/* ---- slot crossing sound --------------------------------------------- */
+/* ---- helpers ---------------------------------------------------------- */
+function setFeedback(kind, text) {
+  feedback.kind = kind
+  feedback.text = text
+}
+function pushHistory(kind) {
+  history.value = [...history.value, { kind }].slice(-HISTORY_MAX)
+}
+
 function crossSlot(i) {
   const s = SLOTS[i]
   litSlot.value = i
@@ -108,10 +117,9 @@ function tick(ts) {
   const dt = ts - lastTs
   lastTs = ts
 
-  if (!waiting.value) {
+  if (status.value === 'running' && !waiting.value) {
     let a = angleVal + (dt / LOOP_MS) * 360
 
-    // slot crossings
     const prevSlot = Math.floor(angleVal / 45) % SLOT_COUNT
     const nextSlot = Math.floor((a % 360) / 45) % SLOT_COUNT
     if (nextSlot !== prevSlot && nextSlot !== lastSlot) {
@@ -128,12 +136,11 @@ function tick(ts) {
       waiting.value = true
     }
 
-    // loop wrap
     if (a >= 360) {
       a -= 360
       if (!hitThisLoop) {
-        loopsDone.value = 0
-        setFeedback('bad', 'Missed — streak reset')
+        pushHistory('miss')
+        setFeedback('bad', 'Missed')
       }
       hitThisLoop = false
       lastSlot = -1
@@ -145,42 +152,51 @@ function tick(ts) {
   rafId = requestAnimationFrame(tick)
 }
 
-/* ---- hit -------------------------------------------------------------- */
-function setFeedback(kind, text) {
-  feedback.kind = kind
-  feedback.text = text
+/* ---- countdown / start ----------------------------------------------- */
+function startCountdown() {
+  if (status.value !== 'idle') return
+  status.value = 'countdown'
+  countdown.value = 3
+  setFeedback('idle', 'Get ready')
+  cdTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      clearInterval(cdTimer)
+      status.value = 'running'
+      lastTs = 0
+      setFeedback('idle', 'Hit SPACE on the orange slot')
+    }
+  }, 1000)
 }
 
+/* ---- hit -------------------------------------------------------------- */
 function registerHit() {
-  if (hitThisLoop) return
+  if (status.value !== 'running' || hitThisLoop) return
   const targetDeg = slotAngle(TARGET_INDEX)
   const diff = angleDiff(angleVal, targetDeg)
 
   if (diff <= HIT_WINDOW_DEG) {
     hitThisLoop = true
-    const ms = Math.round((diff / 360) * LOOP_MS)
     const perfect = diff <= PERFECT_WINDOW_DEG
     playClick(SLOT_FREQ.YOU, 0.09, 'sine')
     litSlot.value = TARGET_INDEX
     setTimeout(() => {
       if (litSlot.value === TARGET_INDEX) litSlot.value = null
     }, 140)
-
-    setFeedback(perfect ? 'perfect' : 'good',
-      perfect ? `Perfect · ${ms}ms` : `On time · +${ms}ms`)
-    loopsDone.value = Math.min(LOOPS_TO_WIN, loopsDone.value + 1)
+    pushHistory(perfect ? 'perfect' : 'good')
+    setFeedback(perfect ? 'perfect' : 'good', perfect ? 'Perfect' : 'On time')
     if (waiting.value) waiting.value = false
   } else {
-    setFeedback('bad', 'Off beat — too early/late')
+    setFeedback('bad', 'Off beat')
   }
 }
 
 /* ---- key handling ----------------------------------------------------- */
 function onKey(e) {
-  if (e.code === 'Space') {
-    e.preventDefault()
-    registerHit()
-  }
+  if (e.code !== 'Space') return
+  e.preventDefault()
+  if (status.value === 'idle') startCountdown()
+  else registerHit()
 }
 
 /* ---- lifecycle -------------------------------------------------------- */
@@ -191,6 +207,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   cancelAnimationFrame(rafId)
+  clearInterval(cdTimer)
 })
 </script>
 
@@ -250,15 +267,24 @@ onUnmounted(() => {
               <div class="e06-slot-inner">{{ s.label }}</div>
             </div>
 
+            <!-- center: start / countdown / running -->
             <div class="e06-clock-center">
-              <div class="e06-clock-label">loop · 8 steps</div>
-              <div class="e06-clock-step">{{ waiting ? 'your turn' : 'step 5' }}</div>
-              <div class="e06-clock-label" style="color:var(--orange-500)">
-                orange slot · you
-              </div>
+              <template v-if="status === 'countdown'">
+                <div class="e06-countdown">{{ countdown }}</div>
+              </template>
+              <template v-else-if="status === 'running'">
+                <div class="e06-clock-label">loop · 8 steps</div>
+                <div class="e06-clock-step">{{ waiting ? 'your turn' : 'step 5' }}</div>
+              </template>
+              <template v-else>
+                <button class="e06-start" type="button" @click="startCountdown">
+                  Start
+                </button>
+              </template>
             </div>
 
-            <div class="e06-cursor-line"
+            <!-- playhead -->
+            <div v-show="status === 'running'" class="e06-cursor-line"
                  :style="{ transform: `rotate(${angle - 180}deg)` }" />
           </div>
         </div>
@@ -267,8 +293,8 @@ onUnmounted(() => {
         <div class="e06-side">
           <div class="e06-title">Drop your kick<em>right on time.</em></div>
           <div class="e06-subtitle">
-            When the cursor sweeps over the orange slot, hit <strong>SPACE</strong>.
-            The loop keeps running — lock onto the tempo.
+            Watch the cursor sweep around the loop. When it reaches the orange
+            slot, hit <strong>SPACE</strong> to drop your kick on the beat.
           </div>
 
           <div class="e06-row">
@@ -286,15 +312,11 @@ onUnmounted(() => {
           </div>
 
           <div class="e06-row">
-            <div class="mono-label">Success · {{ LOOPS_TO_WIN }} loops in a row</div>
+            <div class="mono-label">History · last {{ HISTORY_MAX }} loops</div>
             <div class="e06-loops">
-              <div v-for="i in LOOPS_TO_WIN" :key="i"
+              <div v-for="i in HISTORY_MAX" :key="i"
                    class="e06-loop"
-                   :class="{ done: i - 1 < loopsDone, curr: i - 1 === loopsDone }" />
-            </div>
-            <div class="mono-label" style="color:var(--ink-9)">
-              {{ loopsDone }} of {{ LOOPS_TO_WIN }} · loop
-              <em>{{ loopNum }}</em> in progress
+                   :class="history[i - 1] ? `h-${history[i - 1].kind}` : ''" />
             </div>
           </div>
 
@@ -312,9 +334,6 @@ onUnmounted(() => {
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
-      <div class="exo-footer-center">
-        tempo · <em>{{ BPM }} bpm</em> · loop <em>{{ loopNum }}/{{ LOOPS_TO_WIN }}</em>
-      </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
         <button class="footer-cta" type="button">Skip →</button>
@@ -331,7 +350,7 @@ onUnmounted(() => {
   background: var(--surface-stage);
 }
 
-/* ---- header (identique Exo02) ---- */
+/* ---- header ---- */
 .exo-header {
   display: flex;
   align-items: center;
@@ -462,7 +481,7 @@ onUnmounted(() => {
   color: var(--fg-on-orange);
 }
 
-/* center */
+/* center: perfectly centered overlay */
 .e06-clock-center {
   position: absolute;
   inset: 0;
@@ -471,7 +490,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  pointer-events: none;
   text-align: center;
 }
 .e06-clock-label {
@@ -489,6 +507,28 @@ onUnmounted(() => {
   text-transform: uppercase;
   color: var(--fg-primary);
 }
+.e06-countdown {
+  font-family: var(--font-display);
+  font-size: var(--t-counter);
+  line-height: var(--lh-display);
+  color: var(--brand);
+  font-feature-settings: 'tnum' 1;
+}
+.e06-start {
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  border: none;
+  padding: 18px 44px;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-size: 32px;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--dur-fast), transform var(--dur-fast);
+}
+.e06-start:hover { background: var(--brand-hover); transform: scale(1.04); }
+.e06-start:active { background: var(--brand-press); }
 
 /* playhead */
 .e06-cursor-line {
@@ -560,16 +600,17 @@ onUnmounted(() => {
   border-color: var(--brand);
 }
 
-/* loops */
+/* history bars (8) */
 .e06-loops { display: flex; gap: 6px; }
 .e06-loop {
-  width: 64px;
+  flex: 1;
   height: 14px;
   background: var(--ink-3);
   transition: background-color var(--dur-base);
 }
-.e06-loop.done { background: var(--orange-500); }
-.e06-loop.curr { background: var(--orange-800); }
+.e06-loop.h-perfect { background: var(--accent-lime); }
+.e06-loop.h-good    { background: var(--state-good); }
+.e06-loop.h-miss    { background: var(--state-bad); }
 
 /* feedback */
 .e06-feedback {
@@ -598,7 +639,7 @@ onUnmounted(() => {
   color: var(--bone-0);
 }
 
-/* ---- footer (identique Exo02) ---- */
+/* ---- footer ---- */
 .exo-footer {
   display: flex;
   align-items: center;
@@ -608,14 +649,6 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
-.exo-footer-center {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-.exo-footer-center em { font-style: normal; color: var(--fg-primary); }
 .footer-mic {
   display: inline-flex;
   align-items: center;
