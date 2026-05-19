@@ -1,10 +1,11 @@
 <script setup>
 /* ============================================================
    EXO 03 · CONTROL MODE
-   5 paliers d'intensité (level 6 -> 10 : soft -> loud).
+   10 paliers : 1->5 de plus en plus FORT, 6->10 de plus en
+   plus DOUCEMENT (courbe d'intensité montante puis descendante).
    Son percussif (beatbox) : détection par PIC.
    On suit le niveau ; quand il redescend (fin du coup), on
-   compare le MAX atteint à la zone cible -> validation instant.
+   compare le MAX atteint à la zone cible -> validation.
    Le micro est actif en permanence.
    ============================================================ */
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -13,32 +14,43 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 /* ---------- CONFIG ---------- */
-const SMOOTHING = 0.45        // lissage (réactif mais propre)
-const HIT_THRESHOLD = 0.06    // niveau mini pour considérer un "coup"
-const RELEASE_RATIO = 0.55    // on valide le pic quand le niveau retombe sous max*ratio
+const SMOOTHING = 0.5         // lissage du niveau
+const GAIN = 5.5              // calibrage sensibilité (RMS -> 0..1)
+const HIT_THRESHOLD = 0.05    // niveau mini pour démarrer un "coup"
+const RELEASE_RATIO = 0.6     // fin du coup quand le niveau retombe sous max*ratio
+const FEEDBACK_MS = 900       // durée d'affichage du feedback avant d'avancer
 
-/* 5 paliers : level affiché 6..10, zone cible glisse de bas en haut. */
-const LABELS = ['soft', 'medium', 'medium +', 'loud', 'very loud']
+/* 10 paliers : intensité cible monte (1->5) puis descend (6->10).
+   center = position visée sur le meter (0..1). */
+const INTENSITY = [
+  { id: 1,  label: 'soft',      center: 0.18 },
+  { id: 2,  label: 'medium',    center: 0.36 },
+  { id: 3,  label: 'loud',      center: 0.56 },
+  { id: 4,  label: 'louder',    center: 0.74 },
+  { id: 5,  label: 'max',       center: 0.90 },
+  { id: 6,  label: 'louder',    center: 0.74 },
+  { id: 7,  label: 'loud',      center: 0.56 },
+  { id: 8,  label: 'medium',    center: 0.36 },
+  { id: 9,  label: 'soft',      center: 0.18 },
+  { id: 10, label: 'very soft', center: 0.10 },
+]
 
-const steps = LABELS.map((label, i) => {
-  const center = 0.20 + (i / 4) * 0.62      // 0.20 -> 0.82
-  const half = 0.11
-  return {
-    id: i + 6,                               // affiché 6..10
-    label,
-    min: Math.max(0, center - half),
-    max: Math.min(1, center + half),
-  }
-})
+const HALF = 0.085            // demi-largeur de la zone cible (resserrée)
+
+const steps = INTENSITY.map((s) => ({
+  ...s,
+  min: Math.max(0, s.center - HALF),
+  max: Math.min(1, s.center + HALF),
+}))
 
 /* ---------- STATE ---------- */
 const activeIdx = ref(0)
 const level = ref(0)                  // intensité courante 0..1 (lissée)
-const flash = ref(null)               // 'good' | 'low' | 'high' -> feedback du dernier coup
+const flash = ref(null)               // 'good' | 'low' | 'high'
 
 const audio = reactive({
   ctx: null, analyser: null, stream: null, data: null, raf: null,
-  peak: 0, rising: false,
+  peak: 0, rising: false, locked: false,
 })
 
 const activeStep = computed(() => steps[activeIdx.value])
@@ -60,7 +72,7 @@ const windowSteps = computed(() => {
   return out
 })
 
-/* ---------- FEEDBACK (résultat du dernier coup) ---------- */
+/* ---------- FEEDBACK ---------- */
 const feedback = computed(() => {
   switch (flash.value) {
     case 'good': return { tone: 'good', text: 'Perfect hit' }
@@ -104,6 +116,13 @@ function stopMic() {
 /* ---------- BOUCLE : RMS + détection de pic ---------- */
 function loop() {
   if (!audio.analyser) return
+
+  // FIX micro qui se coupe : le contexte peut passer "suspended"
+  // (après inactivité ou pics forts) -> on le réveille.
+  if (audio.ctx && audio.ctx.state === 'suspended') {
+    audio.ctx.resume().catch(() => {})
+  }
+
   audio.analyser.getByteTimeDomainData(audio.data)
 
   let sum = 0
@@ -112,7 +131,7 @@ function loop() {
     sum += v * v
   }
   const rms = Math.sqrt(sum / audio.data.length)
-  const raw = Math.min(1, rms * 3.3)
+  const raw = Math.min(1, rms * GAIN)
   level.value += (raw - level.value) * SMOOTHING
 
   detectPeak()
@@ -121,17 +140,16 @@ function loop() {
 
 /* ---------- DÉTECTION DE PIC ----------
    Un "coup" = montée au-dessus du seuil puis redescente.
-   À la redescente on évalue le pic atteint pendant le coup. */
+   On ne ré-évalue pas tant que le feedback est affiché (locked). */
 function detectPeak() {
+  if (audio.locked) return
   const l = level.value
 
   if (!audio.rising && l > HIT_THRESHOLD) {
-    // début d'un coup
     audio.rising = true
     audio.peak = l
   } else if (audio.rising) {
     audio.peak = Math.max(audio.peak, l)
-    // le coup retombe -> on évalue
     if (l < audio.peak * RELEASE_RATIO || l < HIT_THRESHOLD) {
       evaluateHit(audio.peak)
       audio.rising = false
@@ -142,20 +160,38 @@ function detectPeak() {
 
 function evaluateHit(peak) {
   const { min, max } = activeStep.value
+  // validation stricte : le pic doit être DANS la zone, pas l'effleurer
   if (peak < min) {
     flash.value = 'low'
+    resetFlash()
   } else if (peak > max) {
     flash.value = 'high'
+    resetFlash()
   } else {
     flash.value = 'good'
-    setTimeout(nextStep, 420)        // laisse voir le feedback puis avance
+    audio.locked = true
+    setTimeout(nextStep, FEEDBACK_MS)   // laisse le temps de voir le feedback
   }
+}
+
+// efface le feedback d'échec après un délai (sans bloquer la détection)
+function resetFlash() {
+  audio.locked = true
+  setTimeout(() => {
+    flash.value = null
+    audio.locked = false
+    audio.rising = false
+    audio.peak = 0
+  }, FEEDBACK_MS)
 }
 
 function nextStep() {
   if (activeIdx.value < steps.length - 1) {
     activeIdx.value++
     flash.value = null
+    audio.locked = false
+    audio.rising = false
+    audio.peak = 0
   } else {
     stopMic()
     // exercice terminé
@@ -207,7 +243,7 @@ onBeforeUnmount(stopMic)
         <!-- ===== center : carrousel 5 bulles ===== -->
         <div class="e03-center">
           <div class="mono-label" style="letter-spacing: 0.4em">
-            — Go louder, hit the target —
+            — Match the target intensity —
           </div>
 
           <!-- carrousel -->
@@ -479,24 +515,20 @@ onBeforeUnmount(stopMic)
 }
 .e03-feedback-icon { font-size: 13px; }
 
-/* idle : neutre */
 .e03-feedback-pill.idle {
   background: var(--ink-3);
   color: var(--fg-muted);
   border-color: var(--line);
 }
-/* pas assez fort : orange sourd */
 .e03-feedback-pill.low {
   background: var(--orange-900);
   color: var(--orange-200);
   border-color: var(--orange-700);
 }
-/* trop fort : rouge */
 .e03-feedback-pill.high {
   background: var(--state-bad);
   color: var(--ink-0);
 }
-/* parfait : vert, animé */
 .e03-feedback-pill.good {
   background: var(--state-good);
   color: var(--ink-0);
