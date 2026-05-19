@@ -126,18 +126,14 @@ const scoreLabel = computed(() => {
   const s = score.value
   return Number.isInteger(s) ? `${s}` : s.toFixed(1)
 })
+/* réussite : score vert si ≥ 70% du total, gris sinon */
+const isScorePass = computed(
+  () => total.value > 0 && score.value / total.value >= 0.7
+)
 
-/* ---------- meilleur score par difficulté (localStorage) ---------- */
-const BEST_KEY = 'exo05-best'
-
-function loadBest () {
-  try {
-    return JSON.parse(localStorage.getItem(BEST_KEY)) || {}
-  } catch {
-    return {}
-  }
-}
-const bestScores = ref(loadBest())   // { easy: 5, medium: 7.5, ... }
+/* ---------- meilleur score par difficulté (en mémoire) ----------
+   non persistant : remis à zéro au rechargement de la page. */
+const bestScores = ref({})           // { easy: 5, medium: 7.5, ... }
 
 function bestFor (key) {
   return bestScores.value[key] ?? null
@@ -153,9 +149,6 @@ function saveBest () {
   isNewBest.value = score.value > prev
   if (isNewBest.value) {
     bestScores.value = { ...bestScores.value, [key]: score.value }
-    try {
-      localStorage.setItem(BEST_KEY, JSON.stringify(bestScores.value))
-    } catch { /* stockage indispo : best score juste en mémoire */ }
   }
 }
 
@@ -502,7 +495,9 @@ const callLabel = computed(() =>
             <div class="e05-panel-info">
               <span class="mono-label">Step 3 · Compare</span>
               <div class="e05-feedback">
-                <span class="placed">{{ scoreLabel }}</span>
+                <span class="placed" :class="{ pass: isScorePass }">
+                  {{ scoreLabel }}
+                </span>
                 <span class="e05-feedback-total">/ {{ total }}</span>
                 <span class="e05-feedback-text">score</span>
               </div>
@@ -514,7 +509,6 @@ const callLabel = computed(() =>
                   Best on {{ PATTERNS[difficulty].label }}:
                   {{ bestFor(difficulty) }}/{{ total }}
                 </span>
-                · green = 1 pt, yellow = 0.5 pt
               </p>
             </div>
             <div class="e05-panel-actions">
@@ -870,8 +864,10 @@ const callLabel = computed(() =>
 .e05-feedback .placed {
   font-size: var(--t-h1);
   letter-spacing: var(--ls-tight);
-  color: var(--state-good);
+  color: var(--fg-muted);
+  transition: color var(--dur-base);
 }
+.e05-feedback .placed.pass { color: var(--state-good); }
 .e05-feedback-total {
   font-size: var(--t-h3);
   color: var(--fg-muted);
