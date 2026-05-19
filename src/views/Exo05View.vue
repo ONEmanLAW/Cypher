@@ -131,20 +131,29 @@ const isScorePass = computed(
   () => total.value > 0 && score.value / total.value >= 0.7
 )
 
-/* ---------- meilleur score par difficulté (en mémoire) ----------
-   non persistant : remis à zéro au rechargement de la page. */
-const bestScores = ref({})           // { easy: 5, medium: 7.5, ... }
+/* ---------- meilleur score par difficulté + mode (en mémoire) ----------
+   non persistant : remis à zéro au rechargement de la page.
+   2 scores par difficulté : 'guided' (repère prof) et 'blind' (à l'aveugle).
+   clé = `${difficulté}-${mode}` ex: 'easy-guided'. */
+const bestScores = ref({})
 
-function bestFor (key) {
-  return bestScores.value[key] ?? null
+/* mode du run en cours, figé au lancement (teacherGuide peut bouger après) */
+const playedMode = ref('guided')
+
+function modeOf (guide) { return guide ? 'guided' : 'blind' }
+function bestKey (diff, mode) { return `${diff}-${mode}` }
+
+/* best score d'une difficulté pour un mode donné */
+function bestFor (diff, mode) {
+  return bestScores.value[bestKey(diff, mode)] ?? null
 }
 
 /* vrai si le dernier score a battu le record (figé à la fin du run) */
 const isNewBest = ref(false)
 
-/* enregistre le score courant s'il bat le record de la difficulté */
+/* enregistre le score courant s'il bat le record (difficulté + mode joué) */
 function saveBest () {
-  const key = difficulty.value
+  const key = bestKey(difficulty.value, playedMode.value)
   const prev = bestScores.value[key] ?? -1
   isNewBest.value = score.value > prev
   if (isNewBest.value) {
@@ -240,6 +249,7 @@ let countdownTimer = null
 
 function startYourTurn () {
   playerHits.value = []
+  playedMode.value = modeOf(teacherGuide.value)   // fige le mode du run
   phase.value = 'play'
   countdown.value = 3
 
@@ -364,12 +374,20 @@ const callLabel = computed(() =>
                 @click="setDifficulty(key)"
               >
                 {{ p.label }}
-                <!-- best score au survol -->
+                <!-- best scores au survol : 2 modes -->
                 <span class="e05-diff-tip">
-                  <template v-if="bestFor(key) !== null">
-                    Best · {{ bestFor(key) }}/{{ p.kicks.length }}
-                  </template>
-                  <template v-else>No score yet</template>
+                  <span class="e05-tip-row">
+                    <span class="e05-tip-mode">Guided</span>
+                    <span>{{ bestFor(key, 'guided') !== null
+                      ? bestFor(key, 'guided') + '/' + p.kicks.length
+                      : '—' }}</span>
+                  </span>
+                  <span class="e05-tip-row">
+                    <span class="e05-tip-mode">Blind</span>
+                    <span>{{ bestFor(key, 'blind') !== null
+                      ? bestFor(key, 'blind') + '/' + p.kicks.length
+                      : '—' }}</span>
+                  </span>
                 </span>
               </button>
             </div>
@@ -499,15 +517,17 @@ const callLabel = computed(() =>
                   {{ scoreLabel }}
                 </span>
                 <span class="e05-feedback-total">/ {{ total }}</span>
-                <span class="e05-feedback-text">score</span>
+                <span class="e05-feedback-text">
+                  score · {{ playedMode === 'guided' ? 'guided' : 'blind' }}
+                </span>
               </div>
               <p class="e05-panel-text">
                 <span v-if="isNewBest" class="e05-new-best">
-                  ★ New best score
+                  ★ New best score ({{ playedMode }})
                 </span>
                 <span v-else>
-                  Best on {{ PATTERNS[difficulty].label }}:
-                  {{ bestFor(difficulty) }}/{{ total }}
+                  Best {{ playedMode }} on {{ PATTERNS[difficulty].label }}:
+                  {{ bestFor(difficulty, playedMode) }}/{{ total }}
                 </span>
               </p>
             </div>
@@ -738,8 +758,11 @@ const callLabel = computed(() =>
   top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  white-space: nowrap;
-  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  padding: 8px 10px;
   background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -747,12 +770,19 @@ const callLabel = computed(() =>
   font-size: 10px;
   letter-spacing: var(--ls-label);
   color: var(--fg-secondary);
+  text-transform: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-fast);
   z-index: 5;
 }
 .e05-diff-btn:hover .e05-diff-tip { opacity: 1; }
+.e05-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.e05-tip-mode { color: var(--fg-muted); }
 
 /* ===== timelines ===== */
 .e05-timelines { display: flex; flex-direction: column; gap: 24px; }
