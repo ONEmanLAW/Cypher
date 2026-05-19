@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import Countdown from '@/components/ui/BaseCountdown.vue'
 
 const router = useRouter()
 
@@ -78,7 +79,6 @@ function playClick(freq = 440, dur = 0.06, type = 'square') {
 /* ---- reactive state --------------------------------------------------- */
 const mode = ref('pause')        // 'pause' | 'loop'
 const status = ref('idle')       // 'idle' | 'countdown' | 'running'
-const countdown = ref(3)
 const angle = ref(0)             // playhead clock angle 0..360
 const waiting = ref(false)
 const litSlot = ref(null)
@@ -87,11 +87,13 @@ const history = ref([])          // [{ kind: 'perfect'|'good'|'miss' }]
 
 /* ---- non-reactive loop refs ------------------------------------------ */
 let rafId = 0
-let cdTimer = 0
 let lastTs = 0
 let angleVal = 0
 let lastSlot = -1
 let hitThisLoop = false
+
+/* ---- countdown component ref ----------------------------------------- */
+const countdownEl = ref(null)
 
 /* ---- helpers ---------------------------------------------------------- */
 function setFeedback(kind, text) {
@@ -156,17 +158,14 @@ function tick(ts) {
 function startCountdown() {
   if (status.value !== 'idle') return
   status.value = 'countdown'
-  countdown.value = 3
   setFeedback('idle', 'Get ready')
-  cdTimer = setInterval(() => {
-    countdown.value -= 1
-    if (countdown.value <= 0) {
-      clearInterval(cdTimer)
-      status.value = 'running'
-      lastTs = 0
-      setFeedback('idle', 'Hit SPACE on the orange slot')
-    }
-  }, 1000)
+  countdownEl.value.start()       // onCountdownDone() au terme
+}
+
+function onCountdownDone() {
+  status.value = 'running'
+  lastTs = 0
+  setFeedback('idle', 'Hit SPACE on the orange slot')
 }
 
 /* ---- hit -------------------------------------------------------------- */
@@ -207,7 +206,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   cancelAnimationFrame(rafId)
-  clearInterval(cdTimer)
 })
 </script>
 
@@ -242,6 +240,9 @@ onUnmounted(() => {
 
     <!-- stage -->
     <div class="stage">
+      <!-- compte à rebours avant la phase de jeu -->
+      <Countdown ref="countdownEl" :from="3" :interval="1000" @done="onCountdownDone" />
+
       <div class="e06-stage">
         <!-- clock -->
         <div class="e06-clock-wrap">
@@ -267,16 +268,13 @@ onUnmounted(() => {
               <div class="e06-slot-inner">{{ s.label }}</div>
             </div>
 
-            <!-- center: start / countdown / running -->
+            <!-- center: start / running -->
             <div class="e06-clock-center">
-              <template v-if="status === 'countdown'">
-                <div class="e06-countdown">{{ countdown }}</div>
-              </template>
-              <template v-else-if="status === 'running'">
+              <template v-if="status === 'running'">
                 <div class="e06-clock-label">loop · 8 steps</div>
                 <div class="e06-clock-step">{{ waiting ? 'your turn' : 'step 5' }}</div>
               </template>
-              <template v-else>
+              <template v-else-if="status === 'idle'">
                 <button class="e06-start" type="button" @click="startCountdown">
                   Start
                 </button>
@@ -420,7 +418,7 @@ onUnmounted(() => {
 .exo-step-dot.curr { background: var(--orange-500); }
 
 /* ---- stage layout ---- */
-.stage { flex: 1; display: flex; min-height: 0; }
+.stage { flex: 1; display: flex; min-height: 0; position: relative; }
 .e06-stage {
   flex: 1;
   display: flex;
@@ -506,13 +504,6 @@ onUnmounted(() => {
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
   color: var(--fg-primary);
-}
-.e06-countdown {
-  font-family: var(--font-display);
-  font-size: var(--t-counter);
-  line-height: var(--lh-display);
-  color: var(--brand);
-  font-feature-settings: 'tnum' 1;
 }
 .e06-start {
   background: var(--brand);

@@ -1,8 +1,8 @@
 <script setup>
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
-  from: { type: Number, default: 3 },      // valeur de départ (3 → 2 → 1)
+  from: { type: Number, default: 3 },       // valeur de départ (3 → 2 → 1)
   interval: { type: Number, default: 700 }, // ms entre chaque tick
   label: { type: String, default: 'Get ready' }
 })
@@ -59,6 +59,7 @@ onBeforeUnmount(stop)
   line-height: 1;
   color: var(--brand);
   text-shadow: 0 0 40px rgba(255, 107, 26, 0.6);
+  font-feature-settings: 'tnum' 1;
   animation: countdown-pop var(--dur-stage) var(--ease-out-snap);
 }
 .countdown-label {
