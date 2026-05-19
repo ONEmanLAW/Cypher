@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import Countdown from '@/components/ui/BaseCountdown.vue'
 
 const router = useRouter()
 
@@ -32,6 +33,10 @@ const running = ref(false)
 const currentBeat = ref(-1)
 const cursorPos = ref(polar(0))
 const trailAngle = ref(0)
+
+/* ---------- countdown ---------- */
+const countdownEl = ref(null)
+const counting = ref(false)
 
 /* ---------- données fixes (à brancher plus tard) ---------- */
 const streak = ref(4)
@@ -117,8 +122,18 @@ function stopLoop () {
 /* ---------- contrôles ---------- */
 function toggleRun () {
   ensureCtx()                            // débloque l'audio sur geste utilisateur
-  running.value = !running.value
-  running.value ? startLoop() : stopLoop()
+  if (running.value) {
+    running.value = false
+    stopLoop()
+  } else {
+    countdownEl.value.start()            // le métronome démarre sur @done
+  }
+}
+
+/* fin du compte à rebours : lancement effectif du métronome */
+function onCountdownDone () {
+  running.value = true
+  startLoop()
 }
 
 function changeBpm (delta) {
@@ -162,6 +177,9 @@ onBeforeUnmount(() => {
 
     <!-- stage -->
     <div class="stage">
+      <!-- compte à rebours avant le métronome -->
+      <Countdown ref="countdownEl" :from="3" @done="onCountdownDone" />
+
       <div class="stage-pad">
         <div class="e04-grid">
           <!-- orbite -->
@@ -352,7 +370,7 @@ onBeforeUnmount(() => {
 .exo-step-dot.curr { background: var(--orange-500); }
 
 /* ===== stage ===== */
-.stage { flex: 1; display: flex; min-height: 0; }
+.stage { flex: 1; display: flex; min-height: 0; position: relative; }
 .stage-pad {
   flex: 1;
   display: flex;
