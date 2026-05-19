@@ -36,7 +36,6 @@ const trailAngle = ref(0)
 
 /* ---------- countdown ---------- */
 const countdownEl = ref(null)
-const counting = ref(false)
 
 /* ---------- données fixes (à brancher plus tard) ---------- */
 const streak = ref(4)
