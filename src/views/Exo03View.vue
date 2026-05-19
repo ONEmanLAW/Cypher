@@ -6,6 +6,7 @@
    Son percussif (beatbox) : détection par PIC.
    On suit le niveau ; quand il redescend (fin du coup), on
    compare le MAX atteint à la zone cible -> validation.
+   La barre affiche le PIC FIGÉ du dernier coup (fiable).
    Le micro est actif en permanence.
    ============================================================ */
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -15,13 +16,12 @@ const router = useRouter()
 
 /* ---------- CONFIG ---------- */
 const SMOOTHING = 0.5         // lissage du niveau
-const GAIN = 5.5              // calibrage sensibilité (RMS -> 0..1)
-const HIT_THRESHOLD = 0.05    // niveau mini pour démarrer un "coup"
+const GAIN = 5.0              // calibrage sensibilité (RMS -> 0..1)
+const HIT_THRESHOLD = 0.08    // niveau mini pour démarrer un "coup" (anti-parasites)
 const RELEASE_RATIO = 0.6     // fin du coup quand le niveau retombe sous max*ratio
 const FEEDBACK_MS = 900       // durée d'affichage du feedback avant d'avancer
 
-/* 10 paliers : intensité cible monte (1->5) puis descend (6->10).
-   center = position visée sur le meter (0..1). */
+/* 10 paliers : intensité cible monte (1->5) puis descend (6->10). */
 const INTENSITY = [
   { id: 1,  label: 'soft',      center: 0.18 },
   { id: 2,  label: 'medium',    center: 0.36 },
@@ -35,7 +35,7 @@ const INTENSITY = [
   { id: 10, label: 'very soft', center: 0.10 },
 ]
 
-const HALF = 0.085            // demi-largeur de la zone cible (resserrée)
+const HALF = 0.085            // demi-largeur de la zone cible
 
 const steps = INTENSITY.map((s) => ({
   ...s,
@@ -45,7 +45,8 @@ const steps = INTENSITY.map((s) => ({
 
 /* ---------- STATE ---------- */
 const activeIdx = ref(0)
-const level = ref(0)                  // intensité courante 0..1 (lissée)
+const level = ref(0)                  // intensité courante 0..1 (lissée, temps réel)
+const lastPeak = ref(0)               // pic figé du dernier coup -> ce qu'on affiche
 const flash = ref(null)               // 'good' | 'low' | 'high'
 
 const audio = reactive({
@@ -87,6 +88,11 @@ const zoneStyle = computed(() => ({
   width: ((activeStep.value.max - activeStep.value.min) * 100) + '%',
 }))
 
+/* La barre affiche le pic figé après un coup, sinon le niveau live. */
+const displayLevel = computed(() =>
+  flash.value ? lastPeak.value : level.value
+)
+
 /* ---------- MICRO (ON en permanence) ---------- */
 async function startMic() {
   try {
@@ -117,8 +123,7 @@ function stopMic() {
 function loop() {
   if (!audio.analyser) return
 
-  // FIX micro qui se coupe : le contexte peut passer "suspended"
-  // (après inactivité ou pics forts) -> on le réveille.
+  // FIX micro qui se coupe : le contexte peut passer "suspended" -> on le réveille
   if (audio.ctx && audio.ctx.state === 'suspended') {
     audio.ctx.resume().catch(() => {})
   }
@@ -138,9 +143,7 @@ function loop() {
   audio.raf = requestAnimationFrame(loop)
 }
 
-/* ---------- DÉTECTION DE PIC ----------
-   Un "coup" = montée au-dessus du seuil puis redescente.
-   On ne ré-évalue pas tant que le feedback est affiché (locked). */
+/* ---------- DÉTECTION DE PIC ---------- */
 function detectPeak() {
   if (audio.locked) return
   const l = level.value
@@ -160,7 +163,7 @@ function detectPeak() {
 
 function evaluateHit(peak) {
   const { min, max } = activeStep.value
-  // validation stricte : le pic doit être DANS la zone, pas l'effleurer
+  lastPeak.value = peak                 // on fige le pic -> barre fiable
   if (peak < min) {
     flash.value = 'low'
     resetFlash()
@@ -170,11 +173,10 @@ function evaluateHit(peak) {
   } else {
     flash.value = 'good'
     audio.locked = true
-    setTimeout(nextStep, FEEDBACK_MS)   // laisse le temps de voir le feedback
+    setTimeout(nextStep, FEEDBACK_MS)
   }
 }
 
-// efface le feedback d'échec après un délai (sans bloquer la détection)
 function resetFlash() {
   audio.locked = true
   setTimeout(() => {
@@ -188,14 +190,24 @@ function resetFlash() {
 function nextStep() {
   if (activeIdx.value < steps.length - 1) {
     activeIdx.value++
-    flash.value = null
-    audio.locked = false
-    audio.rising = false
-    audio.peak = 0
   } else {
-    stopMic()
-    // exercice terminé
+    activeIdx.value++   // dépasse -> fin de série
   }
+  flash.value = null
+  audio.locked = false
+  audio.rising = false
+  audio.peak = 0
+}
+
+/* ---------- RESTART ---------- */
+function restart() {
+  activeIdx.value = 0
+  flash.value = null
+  lastPeak.value = 0
+  level.value = 0
+  audio.locked = false
+  audio.rising = false
+  audio.peak = 0
 }
 
 function skip() {
@@ -280,22 +292,22 @@ onBeforeUnmount(stopMic)
 
           <!-- ===== intensity meter ===== -->
           <div class="e03-meter">
-            <div class="mono-label">
-              Detected intensity · target <em>{{ activeStep.label }}</em>
+            <div class="mono-label e03-meter-caption">
+              Match your hit to the green target zone
             </div>
             <div class="e03-meter-track">
               <!-- zone cible -->
               <div class="e03-meter-zone" :style="zoneStyle">
                 <span class="e03-zone-tag">target</span>
               </div>
-              <!-- niveau capté -->
+              <!-- niveau / pic affiché -->
               <div
                 class="e03-meter-fill"
                 :class="feedback.tone"
-                :style="{ width: (level * 100) + '%' }"
+                :style="{ width: (displayLevel * 100) + '%' }"
               />
               <!-- curseur -->
-              <div class="e03-meter-cursor" :style="{ left: (level * 100) + '%' }" />
+              <div class="e03-meter-cursor" :style="{ left: (displayLevel * 100) + '%' }" />
             </div>
           </div>
         </div>
@@ -305,6 +317,7 @@ onBeforeUnmount(stopMic)
     <!-- ============ FOOTER ============ -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
+        <button class="footer-btn" type="button" @click="restart">↻ Restart</button>
         <button class="footer-btn" type="button">↺ Review the demo</button>
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <button class="footer-btn" type="button">ⓘ Tips</button>
@@ -549,6 +562,7 @@ onBeforeUnmount(stopMic)
   width: 560px;
   max-width: 80vw;
 }
+.e03-meter-caption { color: var(--fg-muted); }
 .e03-meter-track {
   position: relative;
   width: 100%;
