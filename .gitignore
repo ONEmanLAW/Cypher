@@ -37,3 +37,7 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+
+# Video
+public/videos/kick-drum-demo.mov

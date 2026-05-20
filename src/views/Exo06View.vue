@@ -241,7 +241,7 @@ onUnmounted(() => {
     <!-- stage -->
     <div class="stage">
       <!-- compte à rebours avant la phase de jeu -->
-      <Countdown ref="countdownEl" :from="3" :interval="1000" @done="onCountdownDone" />
+      <Countdown ref="countdownEl" :from="3" @done="onCountdownDone" />
 
       <div class="e06-stage">
         <!-- clock -->
