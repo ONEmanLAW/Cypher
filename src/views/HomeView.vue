@@ -452,9 +452,11 @@ function goBack() {
   overflow: hidden;
 }
 
+/*
 .card.start {
-  /* same neutral border as other cards at rest; orange only on hover */
+  
 }
+* /
 
 .card:hover {
   border-color: var(--brand);

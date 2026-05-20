@@ -54,7 +54,8 @@ const audio = reactive({
   peak: 0, rising: false, locked: false,
 })
 
-const activeStep = computed(() => steps[activeIdx.value])
+const activeStep = computed(() => steps[activeIdx.value] || steps[steps.length - 1])
+const isFinished = computed(() => activeIdx.value >= steps.length)
 
 /* ---------- CARROUSEL : 5 bulles centrées sur l'actif ---------- */
 const windowSteps = computed(() => {
@@ -145,7 +146,7 @@ function loop() {
 
 /* ---------- DÉTECTION DE PIC ---------- */
 function detectPeak() {
-  if (audio.locked) return
+  if (audio.locked || isFinished.value) return
   const l = level.value
 
   if (!audio.rising && l > HIT_THRESHOLD) {
@@ -188,11 +189,7 @@ function resetFlash() {
 }
 
 function nextStep() {
-  if (activeIdx.value < steps.length - 1) {
-    activeIdx.value++
-  } else {
-    activeIdx.value++   // dépasse -> fin de série
-  }
+  activeIdx.value++
   flash.value = null
   audio.locked = false
   audio.rising = false
@@ -280,14 +277,27 @@ onBeforeUnmount(stopMic)
           </div>
 
           <!-- feedback pill -->
-          <div class="e03-feedback-pill" :class="feedback.tone">
-            <span class="e03-feedback-icon">
-              <template v-if="feedback.tone === 'good'">✓</template>
-              <template v-else-if="feedback.tone === 'high'">▲</template>
-              <template v-else-if="feedback.tone === 'low'">▼</template>
-              <template v-else>♪</template>
-            </span>
-            {{ feedback.text }}
+          <div class="e03-feedback-row">
+            <template v-if="!isFinished">
+              <div class="e03-feedback-pill" :class="feedback.tone">
+                <span class="e03-feedback-icon">
+                  <template v-if="feedback.tone === 'good'">✓</template>
+                  <template v-else-if="feedback.tone === 'high'">▲</template>
+                  <template v-else-if="feedback.tone === 'low'">▼</template>
+                  <template v-else>♪</template>
+                </span>
+                {{ feedback.text }}
+              </div>
+            </template>
+            <template v-else>
+              <div class="e03-feedback-pill done">
+                <span class="e03-feedback-icon">★</span>
+                Series complete
+              </div>
+              <button class="e03-restart-btn" type="button" @click="restart">
+                ↻ Restart
+              </button>
+            </template>
           </div>
 
           <!-- ===== intensity meter ===== -->
@@ -317,7 +327,6 @@ onBeforeUnmount(stopMic)
     <!-- ============ FOOTER ============ -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
-        <button class="footer-btn" type="button" @click="restart">↻ Restart</button>
         <button class="footer-btn" type="button">↺ Review the demo</button>
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <button class="footer-btn" type="button">ⓘ Tips</button>
@@ -513,6 +522,11 @@ onBeforeUnmount(stopMic)
 }
 
 /* ---------- FEEDBACK PILL ---------- */
+.e03-feedback-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .e03-feedback-pill {
   display: inline-flex;
   align-items: center;
@@ -546,6 +560,34 @@ onBeforeUnmount(stopMic)
   background: var(--state-good);
   color: var(--ink-0);
   animation: hit-pop var(--dur-stage) var(--ease-bounce);
+}
+/* fin de série : couleur brand */
+.e03-feedback-pill.done {
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  animation: hit-pop var(--dur-stage) var(--ease-bounce);
+}
+
+/* bouton restart, visible uniquement à la fin */
+.e03-restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--fg-primary);
+  border: 2px solid var(--brand);
+  padding: 10px 24px;
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.e03-restart-btn:hover {
+  background: var(--brand);
+  color: var(--fg-on-orange);
 }
 @keyframes hit-pop {
   0%   { transform: scale(0.7); }
