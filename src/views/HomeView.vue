@@ -1,39 +1,40 @@
 <script setup>
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
+const progress = useProgressStore()
 
 const phases = [
   {
     n: '01',
     name: 'Discovery',
-    exos: [{ id: '01', name: 'Kick Start', state: 'start' }],
+    exos: [{ id: '01', name: 'Kick Start' }],
   },
   {
     n: '02',
     name: 'Imitation',
-    exos: [{ id: '02', name: 'Echo Flow', state: 'todo' }],
+    exos: [{ id: '02', name: 'Echo Flow' }],
   },
   {
     n: '03',
     name: 'Control',
-    exos: [{ id: '03', name: 'Control Mode', state: 'todo' }],
+    exos: [{ id: '03', name: 'Control Mode' }],
   },
   {
     n: '04',
     name: 'Timing',
     exos: [
-      { id: '04', name: 'Stay in Time', state: 'todo' },
-      { id: '05', name: 'Rhythm Copy', state: 'todo' },
-      { id: '06', name: 'Fill the Beat', state: 'todo' },
+      { id: '04', name: 'Stay in Time' },
+      { id: '05', name: 'Rhythm Copy' },
+      { id: '06', name: 'Fill the Beat' },
     ],
   },
 ]
 
 const STATE_PILL = {
   todo: 'To do',
-  next: 'Next',
   start: 'To do',
   current: 'In progress',
   done: 'Done',
@@ -41,14 +42,28 @@ const STATE_PILL = {
 
 const STATE_CTA = {
   todo: 'Later',
-  next: 'Start',
   start: 'Start',
   current: 'Continue',
   done: 'Review',
 }
 
-const allExos = computed(() => phases.flatMap((p) => p.exos))
-const doneCount = computed(() => allExos.value.filter((e) => e.state === 'done').length)
+const resolvedPhases = computed(() => {
+  const flat = phases.flatMap((p) => p.exos.map((e) => e.id))
+  const firstUndoneId = flat.find((id) => progress.getState(id) !== 'done')
+
+  return phases.map((p) => ({
+    ...p,
+    exos: p.exos.map((e) => {
+      const raw = progress.getState(e.id)
+      let state = raw
+      if (raw !== 'done' && e.id === firstUndoneId) state = 'start'
+      return { ...e, state }
+    }),
+  }))
+})
+
+const allExos = computed(() => resolvedPhases.value.flatMap((p) => p.exos))
+const doneCount = computed(() => progress.doneCount)
 
 function goBack() {
   router.back()
@@ -134,7 +149,7 @@ function goBack() {
 
       <!-- GRID -->
       <section class="grid">
-        <div v-for="phase in phases" :key="phase.n" class="col">
+        <div v-for="phase in resolvedPhases" :key="phase.n" class="col">
           <div class="col-head">
             <span class="col-head-num">{{ phase.n }}</span>
             <span class="col-head-name">{{ phase.name }}</span>
@@ -197,12 +212,7 @@ function goBack() {
   background: var(--ink-0);
   flex-shrink: 0;
 }
-
-.nav-left {
-  display: flex;
-  align-items: center;
-}
-
+.nav-left { display: flex; align-items: center; }
 .nav-back {
   display: inline-flex;
   align-items: center;
@@ -217,14 +227,9 @@ function goBack() {
   color: var(--fg-primary);
   background: transparent;
   cursor: pointer;
-  transition:
-    border-color 0.14s ease,
-    color 0.14s ease;
+  transition: border-color 0.14s ease, color 0.14s ease;
 }
-.nav-back:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
+.nav-back:hover { border-color: var(--brand); color: var(--brand); }
 
 .nav-logo {
   display: flex;
@@ -238,12 +243,7 @@ function goBack() {
   text-decoration: none;
 }
 
-.nav-right {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
+.nav-right { display: flex; justify-content: flex-end; gap: 8px; }
 .icon-btn {
   width: 32px;
   height: 32px;
@@ -254,18 +254,10 @@ function goBack() {
   color: var(--fg-primary);
   background: transparent;
   cursor: pointer;
-  transition:
-    border-color 0.14s ease,
-    color 0.14s ease;
+  transition: border-color 0.14s ease, color 0.14s ease;
 }
-.icon-btn:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-.icon-btn svg {
-  width: 14px;
-  height: 14px;
-}
+.icon-btn:hover { border-color: var(--brand); color: var(--brand); }
+.icon-btn svg { width: 14px; height: 14px; }
 
 /* ============ BODY ============ */
 .body {
@@ -278,7 +270,6 @@ function goBack() {
   overflow: hidden;
 }
 
-/* ============ TOP ============ */
 .top {
   display: flex;
   justify-content: space-between;
@@ -288,32 +279,7 @@ function goBack() {
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-
-.top-left {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.top-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--brand);
-}
-.top-eyebrow::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  background: var(--brand);
-  display: inline-block;
-}
-
+.top-left { display: flex; flex-direction: column; gap: 6px; }
 .top-title {
   font-family: var(--font-display);
   font-size: 36px;
@@ -324,10 +290,7 @@ function goBack() {
   color: var(--fg-primary);
   margin: 0;
 }
-.top-title em {
-  font-style: normal;
-  color: var(--brand);
-}
+.top-title em { font-style: normal; color: var(--brand); }
 
 .top-right {
   display: flex;
@@ -336,7 +299,6 @@ function goBack() {
   gap: 6px;
   min-width: 200px;
 }
-
 .progress-label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -344,7 +306,6 @@ function goBack() {
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-
 .progress-num {
   font-family: var(--font-display);
   font-size: 30px;
@@ -352,32 +313,18 @@ function goBack() {
   letter-spacing: -0.02em;
   color: var(--fg-primary);
 }
-.progress-num em {
-  font-style: normal;
-  color: var(--brand);
-}
-.progress-num .slash {
-  color: var(--ink-5);
-  margin: 0 4px;
-}
+.progress-num em { font-style: normal; color: var(--brand); }
+.progress-num .slash { color: var(--ink-5); margin: 0 4px; }
 
-.progress-bar {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-}
+.progress-bar { display: flex; gap: 6px; width: 100%; }
 .progress-bar span {
   flex: 1;
   height: 3px;
   background: var(--ink-4);
   transition: background 0.22s ease;
 }
-.progress-bar span.curr {
-  background: var(--brand);
-}
-.progress-bar span.fill {
-  background: var(--bone-2);
-}
+.progress-bar span.curr { background: var(--brand); }
+.progress-bar span.fill { background: var(--bone-2); }
 
 /* ============ GRID ============ */
 .grid {
@@ -388,7 +335,6 @@ function goBack() {
   min-height: 0;
 }
 
-/* ============ COLUMN ============ */
 .col {
   display: flex;
   flex-direction: column;
@@ -427,12 +373,8 @@ function goBack() {
   min-height: 0;
 }
 
-.col:has(.card:hover) .col-head {
-  border-color: var(--brand);
-}
-.col:has(.card:hover) .col-head-num {
-  color: var(--brand);
-}
+.col:has(.card:hover) .col-head { border-color: var(--brand); }
+.col:has(.card:hover) .col-head-num { color: var(--brand); }
 
 /* ============ CARD ============ */
 .card {
@@ -452,25 +394,20 @@ function goBack() {
   overflow: hidden;
 }
 
-/*
-.card.start {
-  
-}
-*/
-
 .card:hover {
   border-color: var(--brand);
   transform: translateY(-2px);
 }
-.card:hover .card-no {
-  color: var(--brand);
+.card:hover .card-no { color: var(--brand); }
+.card:hover .card-cta { border-color: var(--brand); color: var(--brand); }
+.card:hover .card-foot { border-color: var(--brand); }
+
+.card.done .card-no,
+.card.done .state-pill {
+  color: var(--state-good, #4DD08C);
 }
-.card:hover .card-cta {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-.card:hover .card-foot {
-  border-color: var(--brand);
+.card.done .state-pill {
+  border-color: var(--state-good, #4DD08C);
 }
 
 .card-top {
@@ -489,9 +426,6 @@ function goBack() {
   color: var(--fg-muted);
   transition: color 0.22s ease;
 }
-.card.start .card-no {
-  color: var(--fg-muted);
-}
 
 .state-pill {
   font-family: var(--font-mono);
@@ -501,10 +435,6 @@ function goBack() {
   text-transform: uppercase;
   padding: 3px 7px;
   border: 1px solid var(--line);
-  color: var(--fg-muted);
-}
-.card.start .state-pill {
-  border-color: var(--line);
   color: var(--fg-muted);
 }
 
@@ -517,14 +447,9 @@ function goBack() {
   color: var(--fg-primary);
   font-weight: 400;
 }
-.card.dense .card-name {
-  font-size: 17px;
-}
+.card.dense .card-name { font-size: 17px; }
 
-.card-spacer {
-  flex: 1;
-  min-height: 8px;
-}
+.card-spacer { flex: 1; min-height: 8px; }
 
 .card-foot {
   display: flex;
@@ -548,15 +473,10 @@ function goBack() {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fg-primary);
-  transition:
-    border-color 0.14s ease,
-    color 0.14s ease,
-    background 0.14s ease;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
-.card-cta svg {
-  width: 11px;
-  height: 11px;
-}
+.card-cta svg { width: 11px; height: 11px; }
+
 .card.start .card-cta {
   background: var(--brand);
   border-color: var(--brand);
@@ -570,37 +490,15 @@ function goBack() {
 
 /* ============ RESPONSIVE ============ */
 @media (max-width: 1100px) {
-  .grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .top-title {
-    font-size: 32px;
-  }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .top-title { font-size: 32px; }
 }
 @media (max-width: 640px) {
-  .home {
-    height: auto;
-    overflow-y: auto;
-  }
-  .body {
-    overflow: visible;
-    gap: 16px;
-  }
-  .top {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-  .top-right {
-    align-items: flex-start;
-    min-width: 0;
-    width: 100%;
-  }
-  .top-title {
-    font-size: 30px;
-  }
-  .grid {
-    grid-template-columns: 1fr;
-  }
+  .home { height: auto; overflow-y: auto; }
+  .body { overflow: visible; gap: 16px; }
+  .top { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .top-right { align-items: flex-start; min-width: 0; width: 100%; }
+  .top-title { font-size: 30px; }
+  .grid { grid-template-columns: 1fr; }
 }
 </style>

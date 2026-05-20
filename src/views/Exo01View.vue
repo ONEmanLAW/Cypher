@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
+import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
+const progress = useProgressStore()
 
 /* ============================================================
    PHASES — mappées sur le temps réel de la vidéo (51s)
@@ -19,7 +21,7 @@ const phases = ref([
   { name: 'Recap',     start: 46,   end: 51,   essai: false },
 ])
 
-const VIDEO_SRC = '/videos/kick-drum-demo.mov' // à remplacer
+const VIDEO_SRC = '/videos/kick-drum-demo.mov'
 
 /* ============================================================
    STATE
@@ -35,10 +37,10 @@ const volume = ref(0.8)
 const muted = ref(false)
 const showVolume = ref(false)
 
-const visitedPhases = ref(new Set([0])) // phases débloquées
-const validatedTries = ref(new Set())   // essais validés
-const activeTryIdx = ref(null)          // phase d'essai active
-const tryFeedback = ref(null)           // 'good' | 'meh' | null
+const visitedPhases = ref(new Set([0]))
+const validatedTries = ref(new Set())
+const activeTryIdx = ref(null)
+const tryFeedback = ref(null)
 
 /* ============================================================
    COMPUTED
@@ -81,11 +83,9 @@ function onTimeUpdate() {
   if (!videoRef.value) return
   currentTime.value = videoRef.value.currentTime
 
-  // marque la phase courante comme visitée
   const idx = currentPhaseIdx.value
   if (idx !== -1) visitedPhases.value.add(idx)
 
-  // déclenche l'arrêt si on entre dans un essai non validé
   const phase = phases.value[idx]
   if (phase && phase.essai && !validatedTries.value.has(idx) && activeTryIdx.value !== idx) {
     triggerTryStop(idx)
@@ -98,6 +98,11 @@ function onLoadedMetadata() {
 
 function onPlay() { isPlaying.value = true }
 function onPause() { isPlaying.value = false }
+
+function onVideoEnded() {
+  isPlaying.value = false
+  progress.markDone('01')
+}
 
 function setVolume(v) {
   volume.value = v
@@ -140,7 +145,6 @@ async function exitFullscreenIfNeeded() {
 }
 
 async function triggerTryStop(idx) {
-  // on sort du fullscreen AVANT de pause, pour éviter les race conditions
   await exitFullscreenIfNeeded()
   if (videoRef.value) videoRef.value.pause()
   activeTryIdx.value = idx
@@ -158,18 +162,16 @@ function continueAfterTry() {
   validatedTries.value.add(activeTryIdx.value)
   activeTryIdx.value = null
   tryFeedback.value = null
-  // reprend juste la lecture là où on s'était arrêté
   if (videoRef.value) videoRef.value.play()
 }
 
 /* ============================================================
-   TIMELINE NAVIGATION (re-cliquer sur une phase déjà vue)
+   TIMELINE NAVIGATION
    ============================================================ */
 function goToPhase(idx) {
-  if (!visitedPhases.value.has(idx)) return // bloqué
+  if (!visitedPhases.value.has(idx)) return
   if (!videoRef.value) return
   videoRef.value.currentTime = phases.value[idx].start
-  // si on retourne sur un essai, on le relance
   const phase = phases.value[idx]
   if (phase.essai) {
     triggerTryStop(idx)
@@ -234,6 +236,7 @@ onBeforeUnmount(() => {
             @loadedmetadata="onLoadedMetadata"
             @play="onPlay"
             @pause="onPause"
+            @ended="onVideoEnded"
             @click="togglePlay"
             playsinline
           />
@@ -246,7 +249,6 @@ onBeforeUnmount(() => {
 
           <!-- bottom-right: custom controls -->
           <div class="e01-controls">
-            <!-- volume -->
             <div class="ctrl-volume" @mouseenter="showVolume = true" @mouseleave="showVolume = false">
               <button class="e01-icon-btn" type="button" @click="toggleMute" aria-label="Volume">
                 <svg v-if="!muted && volume > 0.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
@@ -263,7 +265,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <!-- play / pause -->
             <button
               class="e01-icon-btn primary"
               type="button"
@@ -275,7 +276,6 @@ onBeforeUnmount(() => {
               <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
             </button>
 
-            <!-- fullscreen -->
             <button
               class="e01-icon-btn"
               type="button"
@@ -315,7 +315,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- ESSAI PANEL — visible uniquement quand un essai est actif -->
+        <!-- ESSAI PANEL -->
         <div v-if="activeTryIdx !== null" class="e01-essai-panel">
           <div class="e01-essai-block">
             <div class="e01-essai-label">Your turn</div>
@@ -351,9 +351,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* ============================================================
-   LAYOUT
-   ============================================================ */
 .exo {
   height: 100%;
   display: flex;
@@ -361,9 +358,6 @@ onBeforeUnmount(() => {
   background: var(--surface-stage);
 }
 
-/* ============================================================
-   HEADER (identique exo 02)
-   ============================================================ */
 .exo-header {
   display: flex;
   align-items: center;
@@ -432,9 +426,6 @@ onBeforeUnmount(() => {
 .exo-step-dot { width: 10px; height: 10px; background: var(--ink-4); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
-/* ============================================================
-   STAGE
-   ============================================================ */
 .stage { flex: 1; display: flex; min-height: 0; }
 .e01-stage {
   flex: 1;
@@ -445,9 +436,6 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-/* ============================================================
-   VIDEO
-   ============================================================ */
 .e01-video {
   position: relative;
   flex: 1;
@@ -465,7 +453,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-/* caption en bas à gauche */
 .e01-video-caption {
   position: absolute;
   bottom: 16px;
@@ -487,7 +474,6 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 
-/* controls custom en bas à droite */
 .e01-controls {
   position: absolute;
   bottom: 16px;
@@ -525,7 +511,6 @@ onBeforeUnmount(() => {
 }
 .e01-icon-btn.primary:hover { background: var(--brand-hover); }
 
-/* volume popover */
 .ctrl-volume { position: relative; }
 .vol-popover {
   position: absolute;
@@ -562,9 +547,6 @@ onBeforeUnmount(() => {
   border: none;
 }
 
-/* ============================================================
-   TIMELINE
-   ============================================================ */
 .e01-timeline-block { flex-shrink: 0; }
 .e01-timeline-label {
   display: flex;
@@ -637,9 +619,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 8px 0 var(--bone-0);
 }
 
-/* ============================================================
-   ESSAI PANEL
-   ============================================================ */
 .e01-essai-panel {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -697,9 +676,6 @@ onBeforeUnmount(() => {
   color: var(--ink-0);
 }
 
-/* ============================================================
-   FOOTER (identique exo 02)
-   ============================================================ */
 .exo-footer {
   display: flex;
   align-items: center;
