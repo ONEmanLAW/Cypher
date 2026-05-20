@@ -456,7 +456,7 @@ function goBack() {
 .card.start {
   
 }
-* /
+*/
 
 .card:hover {
   border-color: var(--brand);
