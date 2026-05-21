@@ -2,8 +2,12 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
+import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
+const progress = useProgressStore()
+
+const completedDiffs = ref(new Set())
 
 /* ============================================================
    EXO 05 · RHYTHM COPY — call / response, kick only
@@ -234,7 +238,15 @@ function finishRun () {
   if (phase.value === 'listen') hasHeardCall.value = true
   if (phase.value === 'play') {
     phase.value = 'compare'
-    saveBest()                 // enregistre le record une fois noté
+    saveBest()
+    completedDiffs.value.add(difficulty.value)
+    if (
+      completedDiffs.value.has('easy') &&
+      completedDiffs.value.has('medium') &&
+      completedDiffs.value.has('hard')
+    ) {
+      progress.markDone('05')
+    }
   }
 }
 
