@@ -2,8 +2,10 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
+import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
+const progress = useProgressStore()
 
 /* ============================================================
    EXO 04 · MÉTRONOME — 8 temps orbital
@@ -166,6 +168,7 @@ function finishSession () {
   stopLoop()
   statusKind.value = score >= 6 ? 'good' : 'bad'
   statusText.value = `Score ${score} / ${TOTAL_LOOPS}`
+  progress.markDone('04')
 }
 
 /* ---------- boucle d'animation ---------- */
