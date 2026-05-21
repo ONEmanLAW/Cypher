@@ -150,11 +150,14 @@ function crossSlot(i) {
   }
 }
 
+/* FIX #3 : on cherche le prochain target non-hit, peu importe l'angle.
+   Si tous les targets restants sont derrière nous (angle wrap), on freeze
+   sur le prochain target de la loop suivante via offset 360. */
 function nextTargetAhead(a) {
   const sorted = [...targets.value].sort((x, y) => x - y)
   for (const i of sorted) {
     if (hitTargets.has(i)) continue
-    if (slotAngle(i) > a) return i
+    if (slotAngle(i) > a) return { i, angle: slotAngle(i) }
   }
   return null
 }
@@ -214,7 +217,6 @@ function finishSession() {
     bestScores.value = { ...bestScores.value, [key]: sessionHits.value }
   }
 
-  /* score final affiché dans le centre, identique Exo04 */
   statusKind.value = sessionHits.value >= totalHits.value * 0.7 ? 'good' : 'bad'
   statusText.value = `Score ${sessionHits.value} / ${totalHits.value}`
 
@@ -244,10 +246,12 @@ function tick(ts) {
       crossSlot(nextSlot)
     }
 
+    /* FIX #3 : freeze juste avant le prochain target non-hit.
+       Marche aussi pour medium (2 targets) et hard (3 targets). */
     if (mode.value === 'pause') {
       const next = nextTargetAhead(angleVal)
       if (next !== null) {
-        const freezeDeg = slotAngle(next) - PAUSE_FREEZE_MARGIN_DEG
+        const freezeDeg = next.angle - PAUSE_FREEZE_MARGIN_DEG
         if (angleVal < freezeDeg && a >= freezeDeg) {
           a = freezeDeg
           waiting.value = true
@@ -277,13 +281,15 @@ function startCountdown() {
   resetSession()
   playedMode.value = mode.value
   status.value = 'countdown'
+  /* FIX #2 : on remet le badge en idle pour qu'il disparaisse pendant
+     le countdown et le run tant qu'aucun feedback n'est arrivé. */
+  statusKind.value = 'idle'
+  statusText.value = ''
   countdownEl.value.start()
 }
 function onCountdownDone() {
   status.value = 'running'
   lastTs = 0
-  /* pas de texte parasite — le badge garde sa valeur précédente
-     (Press play to start au 1er run, dernier feedback ensuite) */
 }
 
 function restart() {
@@ -292,6 +298,14 @@ function restart() {
   statusText.value = 'Press play to start'
   resetSession()
   startCountdown()
+}
+
+function stopSession() {
+  status.value = 'idle'
+  statusKind.value = 'idle'
+  statusText.value = 'Press play to start'
+  resetSession()
+  if (countdownEl.value?.cancel) countdownEl.value.cancel()
 }
 
 /* ---- hit -------------------------------------------------------------- */
@@ -425,12 +439,15 @@ onUnmounted(() => {
               <div class="e06-slot-inner">{{ s.label }}</div>
             </div>
 
-            <!-- centre : badge status identique Exo04 -->
+            <!-- centre : badge status, masqué pendant countdown + tant qu'aucun feedback -->
             <div class="e06-clock-center">
               <div v-if="status === 'running' && waiting" class="e06-clock-step">
                 your turn
               </div>
-              <div v-else :class="['e06-status', statusKind]">
+              <div
+                v-else-if="status !== 'countdown' && !(status === 'running' && statusKind === 'idle')"
+                :class="['e06-status', statusKind]"
+              >
                 {{ statusText }}
               </div>
             </div>
@@ -452,6 +469,7 @@ onUnmounted(() => {
                 type="button"
                 class="e06-diff-btn"
                 :class="{ active: difficulty === key, done: completedDiffs.has(key) }"
+                :disabled="status === 'countdown' || status === 'running'"
                 @click="setDifficulty(key)"
               >
                 {{ p.label }}
@@ -478,17 +496,21 @@ onUnmounted(() => {
             <span class="mono-label">Mode</span>
             <div class="chip-row">
               <button class="chip" :class="{ active: mode === 'pause' }"
-                      type="button" @click="mode = 'pause'">
+                      type="button"
+                      :disabled="status === 'countdown' || status === 'running'"
+                      @click="mode = 'pause'">
                 Easy · pause
               </button>
               <button class="chip" :class="{ active: mode === 'loop' }"
-                      type="button" @click="mode = 'loop'">
+                      type="button"
+                      :disabled="status === 'countdown' || status === 'running'"
+                      @click="mode = 'loop'">
                 Natural · loop
               </button>
             </div>
           </div>
 
-          <!-- streak (avec new best en message) -->
+          <!-- streak -->
           <div class="e06-block">
             <span class="mono-label">
               Streak · {{ loopCount }} / {{ TOTAL_LOOPS }} loops
@@ -526,16 +548,21 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- play / restart -->
+          <!-- play / restart / stop : pleine largeur, même slot -->
           <button
             v-if="status === 'idle'"
             class="e06-play" type="button" @click="startCountdown">
-            ▶ Play
+            Play
           </button>
           <button
             v-else-if="status === 'done'"
             class="e06-play" type="button" @click="restart">
-            ↻ Restart
+            Play again
+          </button>
+          <button
+            v-else
+            class="e06-play stop" type="button" @click="stopSession">
+            Stop
           </button>
         </div>
       </div>
@@ -733,7 +760,7 @@ onUnmounted(() => {
   color: var(--brand);
 }
 
-/* badge status — identique Exo04 .e04-status */
+/* badge status */
 .e06-status {
   padding: 8px 12px;
   border-radius: 2px;
@@ -865,7 +892,7 @@ onUnmounted(() => {
   border-color: var(--brand);
 }
 
-/* streak (identique Exo04) */
+/* streak */
 .e06-streak { display: flex; align-items: center; gap: 24px; }
 .e06-streak-num {
   font-family: var(--font-display);
@@ -884,7 +911,7 @@ onUnmounted(() => {
 .e06-streak-msg strong { color: var(--fg-primary); }
 .e06-new-best { color: var(--brand); font-weight: 500; }
 
-/* historique (identique Exo04) */
+/* historique */
 .e06-history {
   padding: 16px;
   background: var(--surface-card);
@@ -904,9 +931,10 @@ onUnmounted(() => {
 .e06-hdot.bad  { background: var(--state-bad);  border-color: var(--state-bad); }
 .e06-hdot.empty { background: transparent; }
 
-/* play / restart (identique Exo04 .e04-transport) */
+/* FIX #1 : play / restart pleine largeur */
 .e06-play {
-  align-self: flex-start;
+  align-self: stretch;
+  width: 100%;
   font-family: var(--font-display);
   font-size: var(--t-h3);
   letter-spacing: var(--ls-tight);
@@ -917,9 +945,41 @@ onUnmounted(() => {
   border: 2px solid var(--brand);
   border-radius: 4px;
   cursor: pointer;
+  text-align: center;
   transition: background-color var(--dur-fast);
 }
 .e06-play:hover { background: var(--brand-hover); }
+
+.e06-play.stop {
+  background: var(--ink-3);
+  color: var(--fg-primary);
+}
+.e06-play.stop:hover {
+  background: var(--ink-3);
+}
+
+.e06-diff-btn:disabled,
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.e06-diff-btn:disabled:hover,
+.chip:disabled:hover {
+  color: var(--fg-muted);
+  border-color: var(--line);
+  background: transparent;
+}
+.e06-diff-btn.active:disabled {
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  opacity: 0.6;
+}
+.chip.active:disabled {
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  border-color: var(--brand);
+  opacity: 0.6;
+}
 
 /* ---- footer ---- */
 .exo-footer {
