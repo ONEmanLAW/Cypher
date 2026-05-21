@@ -1,19 +1,40 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useProgressStore } from '@/stores/progress'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 
 const router = useRouter()
+const progress = useProgressStore()
 
-const objectifs = [1, 3, 5, 10, 20]
-const goal = ref(10)            // objectif sélectionné
-const current = 7               // répétitions faites
+const GOAL = 21
+const current = ref(0)
+const done = ref(false)
 
 const segs = computed(() =>
-  Array.from({ length: goal.value }, (_, i) => i < current)
+  Array.from({ length: GOAL }, (_, i) => i < current.value)
 )
 
 const pad = (n) => String(n).padStart(2, '0')
+
+function tick() {
+  if (done.value) return
+  current.value++
+  if (current.value >= GOAL) {
+    done.value = true
+    progress.markDone('02')
+  }
+}
+
+function onKey(e) {
+  if (e.code === 'Space') {
+    e.preventDefault()
+    tick()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -48,29 +69,14 @@ const pad = (n) => String(n).padStart(2, '0')
     <!-- stage -->
     <div class="stage">
       <div class="stage-pad">
-        <!-- goal -->
-        <div class="e02-objectif-row">
-          <span class="mono-label">Goal</span>
-          <div class="chip-row">
-            <button
-              v-for="v in objectifs"
-              :key="v"
-              :class="['chip', { active: v === goal }]"
-              type="button"
-              @click="goal = v"
-            >
-              ×{{ v }}
-            </button>
-          </div>
-        </div>
-
-        <!-- counter + bar + feedback -->
         <div class="e02-center">
-          <div class="mono-label" style="letter-spacing: 0.4em">— Repeat the sound —</div>
+          <div class="mono-label" style="letter-spacing: 0.4em">
+            — Repeat the sound · press <em>SPACE</em> —
+          </div>
           <div class="e02-counter">
             <span class="cur">{{ pad(current) }}</span>
             <span class="sep">/</span>
-            <span class="tgt">{{ pad(goal) }}</span>
+            <span class="tgt">{{ pad(GOAL) }}</span>
           </div>
           <div class="e02-bar">
             <div
@@ -83,7 +89,7 @@ const pad = (n) => String(n).padStart(2, '0')
             <div class="e02-wave">
               <BaseWaveform :bar-count="48" />
             </div>
-            <div class="e02-streak-badge">Good streak · ×5 in a row</div>
+            <div v-if="done" class="e02-streak-badge">Exercise completed ✓</div>
           </div>
         </div>
       </div>
@@ -98,7 +104,9 @@ const pad = (n) => String(n).padStart(2, '0')
       </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Skip →</button>
+        <button class="footer-cta" type="button" @click="router.push('/')">
+          Skip →
+        </button>
       </div>
     </footer>
   </div>
@@ -138,6 +146,7 @@ const pad = (n) => String(n).padStart(2, '0')
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
+  cursor: pointer;
   transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .exo-back:hover,
@@ -190,13 +199,6 @@ const pad = (n) => String(n).padStart(2, '0')
   padding: 32px 40px;
 }
 
-/* goal row */
-.e02-objectif-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-shrink: 0;
-}
 .mono-label {
   font-family: var(--font-mono);
   font-weight: 500;
@@ -205,23 +207,7 @@ const pad = (n) => String(n).padStart(2, '0')
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-.chip-row { display: flex; gap: 8px; }
-.chip {
-  background: transparent;
-  color: var(--fg-secondary);
-  border: 1px solid var(--line);
-  padding: 4px 12px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  transition: border-color var(--dur-fast), color var(--dur-fast), background-color var(--dur-fast);
-}
-.chip:hover { border-color: var(--line-strong); color: var(--fg-primary); }
-.chip.active {
-  background: var(--brand);
-  color: var(--fg-on-orange);
-  border-color: var(--brand);
-}
+.mono-label em { font-style: normal; color: var(--brand); }
 
 /* center */
 .e02-center {
@@ -245,7 +231,7 @@ const pad = (n) => String(n).padStart(2, '0')
 .e02-counter .sep { color: var(--ink-5); padding: 0 4px; }
 .e02-counter .tgt { color: var(--ink-6); }
 
-.e02-bar { display: flex; gap: 4px; width: 560px; max-width: 80vw; }
+.e02-bar { display: flex; gap: 4px; width: 720px; max-width: 80vw; }
 .e02-bar-seg {
   flex: 1;
   height: 14px;
@@ -262,7 +248,6 @@ const pad = (n) => String(n).padStart(2, '0')
 }
 .e02-wave { width: 280px; }
 
-/* badge streak qui pulse */
 .e02-streak-badge {
   background: var(--state-good);
   color: var(--ink-0);
@@ -322,6 +307,7 @@ const pad = (n) => String(n).padStart(2, '0')
   font-size: 16px;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
+  cursor: pointer;
   transition: background-color var(--dur-fast);
 }
 .footer-cta:hover { background: var(--brand-hover); }
