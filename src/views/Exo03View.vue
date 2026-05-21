@@ -11,8 +11,10 @@
    ============================================================ */
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
+const progress = useProgressStore()
 
 /* ---------- CONFIG ---------- */
 const SMOOTHING = 0.5         // lissage du niveau
@@ -194,6 +196,10 @@ function nextStep() {
   audio.locked = false
   audio.rising = false
   audio.peak = 0
+
+  if (activeIdx.value >= steps.length) {
+    progress.markDone('03')
+  }
 }
 
 /* ---------- RESTART ---------- */
