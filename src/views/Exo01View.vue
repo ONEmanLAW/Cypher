@@ -9,7 +9,6 @@ const progress = useProgressStore()
 
 /* ============================================================
    PHASES — mappées sur le temps réel de la vidéo (51s)
-   `essai: true` = la vidéo s'arrête, l'utilisateur doit faire le son
    ============================================================ */
 const phases = ref([
   { name: 'Intro',     start: 0,    end: 8,    essai: false },
@@ -32,6 +31,7 @@ const containerRef = ref(null)
 const currentTime = ref(0)
 const duration = ref(51)
 const isPlaying = ref(false)
+const hasStarted = ref(false)
 const isFullscreen = ref(false)
 const volume = ref(0.8)
 const muted = ref(false)
@@ -77,6 +77,12 @@ function togglePlay() {
   if (!videoRef.value) return
   if (videoRef.value.paused) videoRef.value.play()
   else videoRef.value.pause()
+}
+
+function startVideo() {
+  if (!videoRef.value) return
+  hasStarted.value = true
+  videoRef.value.play()
 }
 
 function onTimeUpdate() {
@@ -237,9 +243,19 @@ onBeforeUnmount(() => {
             @play="onPlay"
             @pause="onPause"
             @ended="onVideoEnded"
-            @click="togglePlay"
+            @click="hasStarted && togglePlay()"
             playsinline
           />
+
+          <!-- big play overlay (before first start) -->
+          <div v-if="!hasStarted" class="e01-video-overlay" @click="startVideo">
+            <button class="e01-big-play" type="button" aria-label="Start video">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6,4 20,12 6,20"/>
+              </svg>
+            </button>
+            <div class="e01-big-play-label">Start the demo</div>
+          </div>
 
           <!-- bottom-left: timer + tag -->
           <div class="e01-video-caption">
@@ -269,7 +285,7 @@ onBeforeUnmount(() => {
               class="e01-icon-btn primary"
               type="button"
               @click="togglePlay"
-              :disabled="activeTryIdx !== null"
+              :disabled="activeTryIdx !== null || !hasStarted"
               aria-label="Play/Pause"
             >
               <svg v-if="isPlaying" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
@@ -292,7 +308,7 @@ onBeforeUnmount(() => {
         <!-- TIMELINE -->
         <div class="e01-timeline-block">
           <div class="e01-timeline-label">
-            <span>Path · <em>{{ doneTries }}/{{ totalTries }} tries validated</em></span>
+            <span>Timeline</span>
             <span>{{ fmtTime(currentTime) }} / {{ fmtTime(duration) }}</span>
           </div>
           <div class="e01-phases">
@@ -453,6 +469,51 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+/* ===== Big play overlay (avant le premier lancement) ===== */
+.e01-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: rgba(5, 5, 6, 0.65);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  z-index: 2;
+  transition: background-color var(--dur-base);
+}
+.e01-video-overlay:hover { background: rgba(5, 5, 6, 0.55); }
+
+.e01-big-play {
+  width: 96px;
+  height: 96px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-spring), background-color var(--dur-fast);
+  box-shadow: var(--shadow-glow);
+}
+.e01-big-play:hover {
+  background: var(--brand-hover);
+  transform: scale(1.06);
+}
+.e01-big-play svg { transform: translateX(3px); }
+
+.e01-big-play-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-primary);
+}
+
 .e01-video-caption {
   position: absolute;
   bottom: 16px;
@@ -465,6 +526,7 @@ onBeforeUnmount(() => {
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--fg-primary);
+  z-index: 1;
 }
 .pill {
   background: var(--brand);
@@ -481,6 +543,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 6px;
   align-items: center;
+  z-index: 1;
 }
 .e01-icon-btn {
   width: 36px;
