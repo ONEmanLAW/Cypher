@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
+const currentSound = computed(() => progress.currentSound)
 
 const completedDiffs = ref(new Set())
 
@@ -320,10 +321,12 @@ const callLabel = computed(() =>
     <!-- header -->
     <header class="exo-header">
       <div class="exo-header-side">
-        <button class="exo-back" type="button" @click="router.push('/')">
+        <button class="exo-back" type="button" @click="router.push('/exercises')">
           ← Back
         </button>
-        <span class="exo-header-num">Sound · <em>Kick Drum</em></span>
+        <span v-if="currentSound" class="exo-header-num">
+          Sound · <em>{{ currentSound.name }}</em>
+        </span>
       </div>
       <div class="exo-header-title">
         <div class="kicker">Exo 05 · Academy</div>

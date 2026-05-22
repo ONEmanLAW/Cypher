@@ -6,6 +6,7 @@ import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
+const currentSound = computed(() => progress.currentSound)
 
 const GOAL = 21
 const current = ref(0)
@@ -42,10 +43,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <!-- header -->
     <header class="exo-header">
       <div class="exo-header-side">
-        <button class="exo-back" type="button" @click="router.push('/')">
+        <button class="exo-back" type="button" @click="router.push('/exercises')">
           ← Back
         </button>
-        <span class="exo-header-num">Sound · <em>Kick Drum</em></span>
+        <span v-if="currentSound" class="exo-header-num">
+          Sound · <em>{{ currentSound.name }}</em>
+        </span>
       </div>
       <div class="exo-header-title">
         <div class="kicker">Exo 02 · Academy</div>

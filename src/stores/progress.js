@@ -1,100 +1,96 @@
-// import { defineStore } from 'pinia'
-// import { ref, computed } from 'vue'
-
-// const STORAGE_KEY = 'cypher.progress.v1'
-
-// function loadInitial() {
-//   try {
-//     const raw = localStorage.getItem(STORAGE_KEY)
-//     if (!raw) return {}
-//     return JSON.parse(raw)
-//   } catch {
-//     return {}
-//   }
-// }
-
-// export const useProgressStore = defineStore('progress', () => {
-//   const states = ref(loadInitial())
-//   const allIds = ['01', '02', '03', '04', '05', '06']
-
-//   function persist() {
-//     try {
-//       localStorage.setItem(STORAGE_KEY, JSON.stringify(states.value))
-//     } catch {}
-//   }
-
-//   function getState(id) {
-//     return states.value[id] || 'todo'
-//   }
-
-//   function markDone(id) {
-//     states.value[id] = 'done'
-//     persist()
-//   }
-
-//   function markCurrent(id) {
-//     if (states.value[id] !== 'done') {
-//       states.value[id] = 'current'
-//       persist()
-//     }
-//   }
-
-//   function reset() {
-//     states.value = {}
-//     persist()
-//   }
-
-//   const doneCount = computed(
-//     () => allIds.filter((id) => states.value[id] === 'done').length,
-//   )
-
-//   return {
-//     states,
-//     getState,
-//     markDone,
-//     markCurrent,
-//     reset,
-//     doneCount,
-//     allIds,
-//   }
-// })
-
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
+/* ============================================================
+   SONS — catalogue
+   ============================================================ */
+export const SOUNDS = [
+  { id: 'kick',   n: '01', name: 'Kick Drum',   sub: 'the foot kick · the base.',  unlocked: true },
+  { id: 'hihat',  n: '02', name: 'Hi-Hat',      sub: 'ts · ts · ts.',              unlocked: true },
+  { id: 'snare',  n: '03', name: 'Snare',       sub: 'the central snap.',          unlocked: true },
+]
+
+const EXO_IDS = ['01', '02', '03', '04', '05', '06']
+
 export const useProgressStore = defineStore('progress', () => {
+  /* states[soundId] = { '01': 'done', '02': 'current', ... } */
   const states = ref({})
-  const allIds = ['01', '02', '03', '04', '05', '06']
+  const currentSoundId = ref(null)
 
-  function getState(id) {
-    return states.value[id] || 'todo'
+  /* ---------- SON COURANT ---------- */
+  function setCurrentSound(soundId) {
+    currentSoundId.value = soundId
+    if (!states.value[soundId]) states.value[soundId] = {}
   }
 
-  function markDone(id) {
-    states.value[id] = 'done'
+  const currentSound = computed(() =>
+    SOUNDS.find((s) => s.id === currentSoundId.value) || null
+  )
+
+  /* ---------- ÉTAT D'UN EXO (pour le son courant) ---------- */
+  function getState(exoId) {
+    if (!currentSoundId.value) return 'todo'
+    return states.value[currentSoundId.value]?.[exoId] || 'todo'
   }
 
-  function markCurrent(id) {
-    if (states.value[id] !== 'done') {
-      states.value[id] = 'current'
+  function markDone(exoId) {
+    if (!currentSoundId.value) return
+    if (!states.value[currentSoundId.value]) states.value[currentSoundId.value] = {}
+    states.value[currentSoundId.value][exoId] = 'done'
+  }
+
+  function markCurrent(exoId) {
+    if (!currentSoundId.value) return
+    if (!states.value[currentSoundId.value]) states.value[currentSoundId.value] = {}
+    if (states.value[currentSoundId.value][exoId] !== 'done') {
+      states.value[currentSoundId.value][exoId] = 'current'
     }
   }
 
   function reset() {
     states.value = {}
+    currentSoundId.value = null
   }
 
-  const doneCount = computed(
-    () => allIds.filter((id) => states.value[id] === 'done').length,
-  )
+  /* ---------- COMPTEURS ---------- */
+  // nb d'exos done pour le son courant
+  const doneCount = computed(() => {
+    if (!currentSoundId.value) return 0
+    const s = states.value[currentSoundId.value] || {}
+    return EXO_IDS.filter((id) => s[id] === 'done').length
+  })
+
+  // nb d'exos done pour un son donné (utilisé sur l'écran de sélection)
+  function doneCountFor(soundId) {
+    const s = states.value[soundId] || {}
+    return EXO_IDS.filter((id) => s[id] === 'done').length
+  }
+
+  // état global d'un son : 'avail' | 'current' | 'done'
+  function soundState(soundId) {
+    const done = doneCountFor(soundId)
+    if (done === 0) return 'avail'
+    if (done >= EXO_IDS.length) return 'done'
+    return 'current'
+  }
 
   return {
-    states,
+    // catalogue
+    SOUNDS,
+    EXO_IDS,
+    // son courant
+    currentSoundId,
+    currentSound,
+    setCurrentSound,
+    // exos
     getState,
     markDone,
     markCurrent,
     reset,
+    // compteurs
     doneCount,
-    allIds,
+    doneCountFor,
+    soundState,
+    allIds: EXO_IDS,
   }
 })

@@ -15,6 +15,7 @@ import { useProgressStore } from '@/stores/progress'
 
 const router = useRouter()
 const progress = useProgressStore()
+const currentSound = computed(() => progress.currentSound)
 
 /* ---------- CONFIG ---------- */
 const SMOOTHING = 0.5         // lissage du niveau
@@ -227,10 +228,12 @@ onBeforeUnmount(stopMic)
     <!-- ============ HEADER ============ -->
     <header class="exo-header">
       <div class="exo-header-side">
-        <button class="exo-back" type="button" @click="router.push('/')">
+        <button class="exo-back" type="button" @click="router.push('/exercises')">
           ← Back
         </button>
-        <span class="exo-header-num">Sound · <em>Kick Drum</em></span>
+        <span v-if="currentSound" class="exo-header-num">
+          Sound · <em>{{ currentSound.name }}</em>
+        </span>
       </div>
       <div class="exo-header-title">
         <div class="kicker">Exo 03 · Academy</div>
