@@ -10,25 +10,31 @@ const phases = [
   {
     n: '01',
     name: 'Discovery',
-    exos: [{ id: '01', name: 'Kick Start' }],
+    exos: [
+      { id: '01', name: 'Kick Start', desc: 'Find your first sound.' },
+    ],
   },
   {
     n: '02',
     name: 'Imitation',
-    exos: [{ id: '02', name: 'Echo Flow' }],
+    exos: [
+      { id: '02', name: 'Echo Flow', desc: 'Copy what you hear.' },
+    ],
   },
   {
     n: '03',
     name: 'Control',
-    exos: [{ id: '03', name: 'Control Mode' }],
+    exos: [
+      { id: '03', name: 'Control Mode', desc: 'Master your dynamics.' },
+    ],
   },
   {
     n: '04',
     name: 'Timing',
     exos: [
-      { id: '04', name: 'Stay in Time' },
-      { id: '05', name: 'Rhythm Copy' },
-      { id: '06', name: 'Fill the Beat' },
+      { id: '04', name: 'Stay in Time', desc: 'Lock onto the tempo.' },
+      { id: '05', name: 'Rhythm Copy', desc: 'Repeat short patterns.' },
+      { id: '06', name: 'Fill the Beat', desc: 'Add sounds on cue.' },
     ],
   },
 ]
@@ -169,6 +175,7 @@ function goBack() {
               </div>
 
               <div class="card-name">{{ exo.name }}</div>
+              <p class="card-desc">{{ exo.desc }}</p>
 
               <div class="card-spacer" />
 
@@ -448,6 +455,16 @@ function goBack() {
   font-weight: 400;
 }
 .card.dense .card-name { font-size: 17px; }
+
+.card-desc {
+  margin: 6px 0 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  letter-spacing: -0.005em;
+}
+.card.dense .card-desc { font-size: 11px; }
 
 .card-spacer { flex: 1; min-height: 8px; }
 
