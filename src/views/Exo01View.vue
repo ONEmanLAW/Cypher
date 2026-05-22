@@ -574,10 +574,12 @@ onBeforeUnmount(() => {
 }
 .e01-icon-btn.primary:hover { background: var(--brand-hover); }
 
+/* ===== Volume control · fix hover gap ===== */
 .ctrl-volume { position: relative; }
+
 .vol-popover {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(11, 11, 12, 0.92);
@@ -585,6 +587,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   padding: 12px 8px;
   border-radius: 4px;
+  /* padding-bottom crée l'espace visuel SANS trou hover */
+  margin-bottom: 0;
+  padding-bottom: 16px;
 }
 .vol-slider {
   writing-mode: vertical-lr;
