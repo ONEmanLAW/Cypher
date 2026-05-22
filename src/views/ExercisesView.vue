@@ -105,8 +105,11 @@ function goBack() {
             <em>{{ doneCount }}</em><span class="slash">/</span>{{ allExos.length }}
           </div>
           <div class="progress-bar">
-            <span v-for="exo in allExos" :key="exo.id"
-                  :class="{ fill: exo.state === 'done', curr: exo.state === 'current' }" />
+            <span
+              v-for="i in allExos.length"
+              :key="i"
+              :class="{ fill: i <= doneCount }"
+            />
           </div>
         </div>
       </section>
@@ -154,7 +157,6 @@ function goBack() {
 </template>
 
 <style scoped>
-/* (styles identiques à l'ancienne Home, je rajoute juste .nav-sound) */
 .home {
   height: 100dvh;
   width: 100%;
@@ -290,7 +292,6 @@ function goBack() {
   background: var(--ink-4);
   transition: background 0.22s ease;
 }
-.progress-bar span.curr { background: var(--brand); }
 .progress-bar span.fill { background: var(--bone-2); }
 
 .grid {
