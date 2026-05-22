@@ -15,7 +15,9 @@ const sounds = computed(() =>
   }))
 )
 
-const unlockedCount = computed(() => SOUNDS.filter((s) => s.unlocked).length)
+const masteredCount = computed(() =>
+  sounds.value.filter((s) => s.exos === s.total && s.total > 0).length
+)
 const totalCount = computed(() => SOUNDS.length)
 
 const STATE_PILL = {
@@ -23,11 +25,6 @@ const STATE_PILL = {
   current: 'In progress',
   avail:   'Available',
   locked:  'Locked',
-}
-
-const STATE_CTA = {
-  current: 'Continue',
-  avail:   'Start',
 }
 
 function selectSound(sound) {
@@ -43,7 +40,7 @@ function goBack() {
 
 <template>
   <main class="select">
-    <!-- HEADER (identique à ExercisesView) -->
+    <!-- HEADER -->
     <header class="nav">
       <div class="nav-left">
         <button class="nav-back" type="button" @click="goBack">
@@ -90,64 +87,58 @@ function goBack() {
         </div>
 
         <div class="counter">
-          <span class="counter-label">Sounds unlocked</span>
+          <span class="counter-label">Sounds mastered</span>
           <div class="counter-num">
-            <em>{{ unlockedCount }}</em><span class="slash">/</span>{{ totalCount }}
+            <em>{{ masteredCount }}</em><span class="slash">/</span>{{ totalCount }}
           </div>
         </div>
       </section>
 
-      <section class="grid">
-        <button
-          v-for="s in sounds"
-          :key="s.id"
-          type="button"
-          class="card"
-          :class="[s.state]"
-          :disabled="!s.unlocked"
-          @click="selectSound(s)"
-        >
-          <!-- pill état (en haut à droite) -->
-          <div class="card-pill-wrap">
-            <span class="pill" :class="s.state">
-              <span class="pill-dot" />
-              {{ STATE_PILL[s.state] }}
-            </span>
-          </div>
-
-          <!-- vinyle (à droite, partiellement coupé) -->
-          <div class="vinyl-wrap">
+      <section class="grid-wrap">
+        <section class="grid">
+          <button
+            v-for="s in sounds"
+            :key="s.id"
+            type="button"
+            class="card"
+            :class="[s.state]"
+            :disabled="!s.unlocked"
+            @click="selectSound(s)"
+          >
+            <!-- VINYLE -->
             <div class="vinyl">
               <div class="vinyl-grooves" />
-              <div class="vinyl-center" />
-            </div>
-          </div>
-
-          <!-- nom + sous-titre -->
-          <div class="card-text">
-            <div class="card-name">{{ s.name }}</div>
-            <div class="card-sub">{{ s.sub }}</div>
-          </div>
-
-          <!-- footer -->
-          <div class="card-foot">
-            <div class="card-exos">
-              <span class="card-exos-label">Exos · {{ s.exos }}/{{ s.total }}</span>
-              <div class="card-bars">
-                <span v-for="i in s.total" :key="i"
-                      :class="{ fill: i <= s.exos }" />
+              <div class="vinyl-shine" />
+              <div class="vinyl-center">
+                <div class="vinyl-hole" />
               </div>
             </div>
 
-            <span v-if="STATE_CTA[s.state]" class="card-cta">
-              <span>{{ STATE_CTA[s.state] }}</span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6h8m-3-3 3 3-3 3"
-                      stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
-              </svg>
-            </span>
-          </div>
-        </button>
+            <!-- pill -->
+            <div class="card-pill-wrap">
+              <span class="pill" :class="s.state">
+                <span class="pill-dot" />
+                {{ STATE_PILL[s.state] }}
+              </span>
+            </div>
+
+            <!-- nom -->
+            <div class="card-text">
+              <div class="card-name">{{ s.name }}</div>
+            </div>
+
+            <!-- footer -->
+            <div class="card-foot">
+              <div class="card-exos">
+                <span class="card-exos-label">Exos · {{ s.exos }}/{{ s.total }}</span>
+                <div class="card-bars">
+                  <span v-for="i in s.total" :key="i"
+                        :class="{ fill: i <= s.exos }" />
+                </div>
+              </div>
+            </div>
+          </button>
+        </section>
       </section>
     </div>
   </main>
@@ -163,7 +154,7 @@ function goBack() {
   overflow: hidden;
 }
 
-/* ============ NAV (identique ExercisesView) ============ */
+/* ============ NAV ============ */
 .nav {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -286,12 +277,18 @@ function goBack() {
 .counter-num .slash { color: var(--ink-5); margin: 0 4px; }
 
 /* ============ GRID ============ */
+.grid-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  flex: 1;
-  min-height: 0;
+  width: 100%;
 }
 
 /* ============ CARD ============ */
@@ -306,7 +303,7 @@ function goBack() {
   color: var(--fg-primary);
   cursor: pointer;
   overflow: hidden;
-  min-height: 0;
+  height: clamp(280px, 38vh, 360px);
   transition:
     border-color var(--dur-base) var(--ease-out-snap),
     transform var(--dur-base) var(--ease-out-snap),
@@ -316,7 +313,6 @@ function goBack() {
 .card:disabled,
 .card.locked { cursor: not-allowed; }
 
-/* États */
 .card.avail,
 .card.locked {
   background: var(--bone-2);
@@ -339,12 +335,12 @@ function goBack() {
 }
 .card.locked { opacity: 0.55; }
 
-/* ============ PILL EN HAUT ============ */
+/* ============ PILL ============ */
 .card-pill-wrap {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin-bottom: 16px;
 }
 .pill {
@@ -378,86 +374,127 @@ function goBack() {
   border-color: var(--ink-1);
 }
 
-/* ============ VINYLE (à droite, partiellement coupé comme la maquette) ============ */
-.vinyl-wrap {
-  position: absolute;
-  top: 40%;
-  right: -90px;
-  transform: translateY(-50%);
-  width: 260px;
-  height: 260px;
-  pointer-events: none;
-  z-index: 1;
-}
+/* =================================================
+   VINYLE
+   ================================================= */
 .vinyl {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 50%;
+  right: -35%;
+  width: 75%;
+  aspect-ratio: 1 / 1;
   border-radius: 999px;
   background: var(--ink-0);
-  transition: box-shadow var(--dur-base);
+  pointer-events: none;
+  z-index: 0;
+  transform: translateY(-50%);
+  animation: vinyl-spin 8s linear infinite;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.04),
+    inset 0 0 40px rgba(0,0,0,0.6);
 }
 
-/* Rotation au hover */
+@keyframes vinyl-spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to   { transform: translateY(-50%) rotate(360deg); }
+}
+
 .card:not(:disabled):hover .vinyl {
-  animation: spin 4s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  animation-duration: 2.5s;
 }
 
-/* Grooves : cercles concentriques très subtils */
 .vinyl-grooves {
   position: absolute;
-  inset: 12px;
+  inset: 6%;
   border-radius: 999px;
   background:
     repeating-radial-gradient(circle at center,
-      rgba(255,255,255,0.04) 0,
-      rgba(255,255,255,0.04) 1px,
+      rgba(255,255,255,0.07) 0,
+      rgba(255,255,255,0.07) 1px,
       transparent 1px,
-      transparent 7px);
+      transparent 6px);
 }
-/* Étiquette centrale (le label du vinyle) */
+
+.vinyl-shine {
+  position: absolute;
+  inset: 6%;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(255,255,255,0.12) 30deg,
+    transparent 80deg,
+    transparent 180deg,
+    rgba(255,255,255,0.06) 210deg,
+    transparent 260deg,
+    transparent 360deg
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
 .vinyl-center {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 90px;
-  height: 90px;
-  margin: -45px 0 0 -45px;
+  width: 32%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
   background: var(--bone-2);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.15),
+    0 0 0 1px rgba(0,0,0,0.3);
 }
-.vinyl-center::after {
-  content: '';
-  width: 14px;
-  height: 14px;
+
+.vinyl-hole {
+  width: 12%;
+  aspect-ratio: 1 / 1;
   border-radius: 999px;
-  background: var(--ink-0);
+  background: var(--bone-0);
+  box-shadow:
+    0 0 0 2px var(--ink-0),
+    0 0 0 3px rgba(0,0,0,0.6);
 }
 
-/* current : étiquette du vinyle en sombre, trou orange */
-.card.current .vinyl-center { background: var(--ink-0); }
-.card.current .vinyl-center::after { background: var(--brand); }
+/* === Variantes par état === */
+.card.current .vinyl-center {
+  background: var(--ink-0);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.1),
+    0 0 0 1px rgba(255,255,255,0.15);
+}
+.card.current .vinyl-hole {
+  background: var(--brand);
+  box-shadow:
+    0 0 0 2px var(--ink-0),
+    0 0 0 3px rgba(0,0,0,0.6);
+}
 
-/* avail/locked : vinyle reste sombre, étiquette sombre */
-.card.avail .vinyl,
-.card.locked .vinyl { background: var(--ink-0); }
 .card.avail .vinyl-center,
-.card.locked .vinyl-center { background: var(--ink-1); }
-.card.avail .vinyl-center::after,
-.card.locked .vinyl-center::after { background: var(--ink-0); }
+.card.locked .vinyl-center {
+  background: var(--ink-1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    0 0 0 1px rgba(255,255,255,0.1);
+}
+.card.avail .vinyl-hole,
+.card.locked .vinyl-hole {
+  background: var(--bone-0);
+  box-shadow:
+    0 0 0 2px var(--ink-0),
+    0 0 0 3px rgba(255,255,255,0.1);
+}
 
 /* ============ TEXTE ============ */
 .card-text {
   position: relative;
   z-index: 2;
   margin-top: auto;
-  max-width: 60%;
+  max-width: 55%;
 }
 .card-name {
   font-family: var(--font-display);
@@ -465,18 +502,7 @@ function goBack() {
   line-height: 1;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
-  margin-bottom: 6px;
 }
-.card-sub {
-  font-family: var(--font-ui);
-  font-style: italic;
-  font-size: 13px;
-  color: var(--fg-muted);
-  line-height: 1.4;
-}
-.card.avail .card-sub,
-.card.locked .card-sub { color: var(--ink-6); }
-.card.current .card-sub { color: rgba(11,11,12,0.75); }
 
 /* ============ FOOTER ============ */
 .card-foot {
@@ -484,11 +510,12 @@ function goBack() {
   z-index: 2;
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid currentColor;
+  max-width: 55%;
 }
 .card.current .card-foot { border-top-color: rgba(11,11,12,0.3); }
 .card.avail .card-foot,
@@ -522,30 +549,21 @@ function goBack() {
   background: currentColor;
 }
 
-.card-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border: 1px solid currentColor;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-}
-
 /* ============ RESPONSIVE ============ */
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
   .top-title { font-size: 44px; }
+  .card { height: clamp(260px, 36vh, 340px); }
 }
 @media (max-width: 640px) {
-  .select { height: auto; overflow-y: auto; }
+  .select { height: auto; overflow: visible; }
   .body { overflow: visible; }
+  .grid-wrap { align-items: stretch; }
   .top { flex-direction: column; align-items: flex-start; gap: 16px; }
   .counter { align-items: flex-start; }
   .grid { grid-template-columns: 1fr; }
+  .card { height: auto; min-height: 260px; }
   .top-title { font-size: 32px; }
+  .vinyl { width: 70%; right: -30%; }
 }
 </style>
