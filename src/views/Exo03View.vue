@@ -82,7 +82,7 @@ const feedback = computed(() => {
     case 'good': return { tone: 'good', text: 'Perfect hit' }
     case 'low':  return { tone: 'low',  text: 'Not loud enough' }
     case 'high': return { tone: 'high', text: 'Too loud' }
-    default:     return { tone: 'idle', text: 'Hit the kick' }
+    default:     return { tone: 'idle', text: 'Hit the sound' }
   }
 })
 
