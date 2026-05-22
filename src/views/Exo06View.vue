@@ -113,7 +113,7 @@ const streak = ref(0)
 
 /* feedback central (style Exo04) */
 const statusKind = ref('idle')
-const statusText = ref('Press play to start')
+const statusText = ref('')
 
 const slotFeedback = reactive({})
 
@@ -150,9 +150,6 @@ function crossSlot(i) {
   }
 }
 
-/* FIX #3 : on cherche le prochain target non-hit, peu importe l'angle.
-   Si tous les targets restants sont derrière nous (angle wrap), on freeze
-   sur le prochain target de la loop suivante via offset 360. */
 function nextTargetAhead(a) {
   const sorted = [...targets.value].sort((x, y) => x - y)
   for (const i of sorted) {
@@ -246,8 +243,6 @@ function tick(ts) {
       crossSlot(nextSlot)
     }
 
-    /* FIX #3 : freeze juste avant le prochain target non-hit.
-       Marche aussi pour medium (2 targets) et hard (3 targets). */
     if (mode.value === 'pause') {
       const next = nextTargetAhead(angleVal)
       if (next !== null) {
@@ -281,8 +276,6 @@ function startCountdown() {
   resetSession()
   playedMode.value = mode.value
   status.value = 'countdown'
-  /* FIX #2 : on remet le badge en idle pour qu'il disparaisse pendant
-     le countdown et le run tant qu'aucun feedback n'est arrivé. */
   statusKind.value = 'idle'
   statusText.value = ''
   countdownEl.value.start()
@@ -295,7 +288,7 @@ function onCountdownDone() {
 function restart() {
   status.value = 'idle'
   statusKind.value = 'idle'
-  statusText.value = 'Press play to start'
+  statusText.value = ''
   resetSession()
   startCountdown()
 }
@@ -303,7 +296,7 @@ function restart() {
 function stopSession() {
   status.value = 'idle'
   statusKind.value = 'idle'
-  statusText.value = 'Press play to start'
+  statusText.value = ''
   resetSession()
   if (countdownEl.value?.cancel) countdownEl.value.cancel()
 }
@@ -364,7 +357,7 @@ function setDifficulty(key) {
   difficulty.value = key
   status.value = 'idle'
   statusKind.value = 'idle'
-  statusText.value = 'Press play to start'
+  statusText.value = ''
   resetSession()
 }
 
@@ -445,7 +438,11 @@ onUnmounted(() => {
                 your turn
               </div>
               <div
-                v-else-if="status !== 'countdown' && !(status === 'running' && statusKind === 'idle')"
+                v-else-if="
+                  status !== 'countdown'
+                  && !(status === 'running' && statusKind === 'idle')
+                  && statusText
+                "
                 :class="['e06-status', statusKind]"
               >
                 {{ statusText }}
@@ -931,7 +928,7 @@ onUnmounted(() => {
 .e06-hdot.bad  { background: var(--state-bad);  border-color: var(--state-bad); }
 .e06-hdot.empty { background: transparent; }
 
-/* FIX #1 : play / restart pleine largeur */
+/* play / restart pleine largeur */
 .e06-play {
   align-self: stretch;
   width: 100%;
