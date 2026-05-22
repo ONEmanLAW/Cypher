@@ -75,7 +75,7 @@ const ticks = computed(() =>
 
 /* statut central : feedback du dernier tour */
 const statusKind = ref('idle')      // good | bad | idle
-const statusText = ref('Press play to start')
+const statusText = ref('')
 
 /* ---------- timing ---------- */
 const beatMs = computed(() => 60000 / bpm.value)
@@ -209,7 +209,7 @@ function startLoop () {
   history.value = []
   sessionDone.value = false
   statusKind.value = 'idle'
-  statusText.value = 'Hit SPACE on every beat'
+  statusText.value = ''
   startTime = performance.now()
   lastBeat = -1
   rafId = requestAnimationFrame(loop)
@@ -254,8 +254,6 @@ function toggleRun () {
   if (running.value) {
     running.value = false
     stopLoop()
-    statusKind.value = 'idle'
-    statusText.value = 'Stopped'
   } else {
     countdownEl.value.start()
   }
@@ -267,7 +265,7 @@ function onCountdownDone () {
 }
 
 function changeBpm (delta) {
-  bpm.value = Math.min(200, Math.max(40, bpm.value + delta))
+  bpm.value = Math.min(180, Math.max(60, bpm.value + delta))
 }
 
 window.addEventListener('keydown', onKeydown)
@@ -348,7 +346,7 @@ onBeforeUnmount(() => {
             <div class="e04-center">
               <div class="e04-bpm">{{ bpm }}</div>
               <div class="mono-label">BPM</div>
-              <div :class="['e04-status', statusKind]">{{ statusText }}</div>
+              <div v-if="statusText" :class="['e04-status', statusKind]">{{ statusText }}</div>
             </div>
           </div>
 
@@ -371,8 +369,8 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <p class="e04-streak-msg">
-                  Keep going, don't break the chain.
-                  <strong>Goal: {{ streakGoal }} loops in a row.</strong>
+                  Don't break the chain.
+                  <strong>Goal: {{ streakGoal }} loops clean.</strong>
                 </p>
               </div>
             </div>
