@@ -15,7 +15,9 @@ from matplotlib.figure import Figure
 
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import LinearSVC
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
 import joblib
 
 
@@ -60,6 +62,37 @@ def dct_matrix(n_mfcc: int, n_mels: int) -> np.ndarray:
     return np.cos(np.pi / n_mels * (n + 0.5) * k).astype(np.float32)
 
 
+# ---------------- Audio utilities ----------------
+
+def peak_normalize(x: np.ndarray) -> np.ndarray:
+    """Normalise l'amplitude pour que le modèle apprenne le timbre, pas le volume."""
+    peak = np.max(np.abs(x))
+    if peak > 1e-6:
+        return x / peak
+    return x
+
+def center_on_onset(x: np.ndarray, sr: int, window_s: float = 0.5) -> np.ndarray:
+    """Centre le signal sur son pic d'énergie. Sortie de longueur fixe = window_s * sr."""
+    n = int(window_s * sr)
+    if len(x) <= n:
+        # pad si trop court
+        pad = n - len(x)
+        return np.pad(x, (0, pad), mode="constant")
+
+    energy = np.abs(x)
+    peak_idx = int(np.argmax(energy))
+    half = n // 2
+    start = max(0, peak_idx - half)
+    end = start + n
+    if end > len(x):
+        end = len(x)
+        start = end - n
+    return x[start:end]
+
+def compute_rms(x: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(x ** 2)))
+
+
 # ---------------- IO WAV ----------------
 
 def float_to_int16(x: np.ndarray) -> np.ndarray:
@@ -71,7 +104,7 @@ def save_wav_int16(path: Path, x_float: np.ndarray, sr: int):
     x_i16 = float_to_int16(x_float)
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)  # int16
+        wf.setsampwidth(2)
         wf.setframerate(sr)
         wf.writeframes(x_i16.tobytes())
 
@@ -87,7 +120,7 @@ def load_wav_as_float(path: Path) -> tuple[np.ndarray, int]:
         raise ValueError(f"WAV non supporté (sampwidth={sampwidth}). Utilise du PCM 16-bit.")
     x = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
     if n_ch > 1:
-        x = x.reshape(-1, n_ch)[:, 0]  # prend canal 0
+        x = x.reshape(-1, n_ch)[:, 0]
     return x, sr
 
 
@@ -102,6 +135,10 @@ class MFCCConfig:
     n_mfcc: int = 13
     fmin: float = 20.0
     fmax: float = 20000.0
+    # paramètres d'extraction de features
+    normalize: bool = True
+    onset_center: bool = True
+    onset_window_s: float = 0.5
 
 class MFCCExtractor:
     def __init__(self, cfg: MFCCConfig):
@@ -121,10 +158,8 @@ class MFCCExtractor:
         nfft = self.cfg.nfft
         hop = self.cfg.hop
         if x.size < nfft:
-            # pad
             x = np.pad(x, (0, nfft - x.size), mode="constant")
 
-        # framing
         n_frames = 1 + (x.size - nfft) // hop if x.size >= nfft else 1
         if n_frames <= 0:
             n_frames = 1
@@ -144,20 +179,36 @@ class MFCCExtractor:
             mel_energy = self.mel_fb @ power
             mel_energy = np.maximum(mel_energy, 1e-12)
             log_mel = np.log(mel_energy).astype(np.float32)
-            mfcc = (self.dct @ log_mel).astype(np.float32)  # [n_mfcc]
+            mfcc = (self.dct @ log_mel).astype(np.float32)
             mfcc_list.append(mfcc)
 
-        return np.stack(mfcc_list, axis=0)  # [T, n_mfcc]
+        return np.stack(mfcc_list, axis=0)
 
     def features(self, x: np.ndarray) -> np.ndarray:
         """
-        Features fixes pour classification: concat(mean(mfcc), std(mfcc))
-        -> dimension = 2 * n_mfcc
+        Features fixes: mean+std de MFCC + mean+std de delta MFCC.
+        Dimension = 4 * n_mfcc
         """
+        # 1) Onset centering (aligne le son dans la fenêtre)
+        if self.cfg.onset_center:
+            x = center_on_onset(x, self.cfg.sr, window_s=self.cfg.onset_window_s)
+
+        # 2) Peak normalization (rend le modèle invariant au volume)
+        if self.cfg.normalize:
+            x = peak_normalize(x)
+
+        # 3) MFCC frames
         m = self.mfcc_frames(x)  # [T, n_mfcc]
-        mu = m.mean(axis=0)
-        sd = m.std(axis=0)
-        return np.concatenate([mu, sd], axis=0).astype(np.float32)
+
+        # 4) Delta MFCC (dynamique temporelle)
+        delta = np.diff(m, axis=0, prepend=m[:1])
+
+        mu_m = m.mean(axis=0)
+        sd_m = m.std(axis=0)
+        mu_d = delta.mean(axis=0)
+        sd_d = delta.std(axis=0)
+
+        return np.concatenate([mu_m, sd_m, mu_d, sd_d], axis=0).astype(np.float32)
 
 
 # ---------------- App ----------------
@@ -178,9 +229,12 @@ class App(QtWidgets.QMainWindow):
         spec_max_freq=20000,
         n_mels=40,
         n_mfcc=13,
+        # Nouveaux paramètres
+        confidence_threshold=0.6,
+        rms_threshold=0.01,
     ):
         super().__init__()
-        self.setWindowTitle("Audio dataset + entraînement + reconnaissance")
+        self.setWindowTitle("Beatbox recognizer · v2")
 
         self.dataset_dir = Path(dataset_dir)
         self.model_path = Path(model_path)
@@ -188,6 +242,10 @@ class App(QtWidgets.QMainWindow):
         self.sr = int(samplerate)
         self.channels = int(channels)
         self.blocksize = int(blocksize)
+
+        # Nouveaux seuils
+        self.confidence_threshold = float(confidence_threshold)
+        self.rms_threshold = float(rms_threshold)
 
         # --- buffers waveform ---
         self.wave_seconds = float(wave_seconds)
@@ -209,7 +267,6 @@ class App(QtWidgets.QMainWindow):
         self.spec_max_freq = float(spec_max_freq)
 
         self.stft_win = np.hanning(self.stft_nfft).astype(np.float32)
-        self.stft_overlap = np.zeros(self.stft_nfft, dtype=np.float32)
         self.stft_pending = np.zeros(0, dtype=np.float32)
 
         self.spec_freqs = np.fft.rfftfreq(self.stft_nfft, d=1.0 / self.sr)
@@ -218,7 +275,7 @@ class App(QtWidgets.QMainWindow):
         self.spec_cols = max(10, int((self.spec_seconds * self.sr) / self.stft_hop))
         self.spec_img = np.full((self.spec_freqs_view.size, self.spec_cols), -120.0, dtype=np.float32)
 
-        # --- mfcc spectrogram (same framing as stft) ---
+        # --- mfcc spectrogram ---
         self.mfcc_cfg = MFCCConfig(
             sr=self.sr,
             nfft=self.stft_nfft,
@@ -227,35 +284,33 @@ class App(QtWidgets.QMainWindow):
             n_mfcc=int(n_mfcc),
             fmin=20.0,
             fmax=min(20000.0, self.sr / 2),
+            normalize=True,
+            onset_center=True,
+            onset_window_s=0.5,
         )
         self.mfcc_extractor = MFCCExtractor(self.mfcc_cfg)
         self.mfcc_img = np.full((self.mfcc_cfg.n_mfcc, self.spec_cols), 0.0, dtype=np.float32)
 
-        # --- dataset / model state ---
+        # --- state ---
         self.model = None
         self.last_prediction = "-"
         self.recognition_on = False
 
-        # recording state
         self.recording_on = False
         self.record_label = ""
-        self.record_target_n = int(self.sr * 1.0)  # default 1s (modifiable via UI)
+        self.record_target_n = int(self.sr * 1.0)
         self.record_buf = []
 
-        # recognition window seconds
         self.recog_seconds = 1.0
-        # separate recognition buffer (up to 5 seconds)
         self.recog_buf_max = int(self.sr * 5.0)
         self.recog_buf = np.zeros(self.recog_buf_max, dtype=np.float32)
 
-        # audio queue
         self.q = queue.Queue(maxsize=500)
 
         # ---------------- UI ----------------
         central = QtWidgets.QWidget()
         root = QtWidgets.QVBoxLayout(central)
 
-        # Matplotlib figure with 4 rows
         self.fig = Figure(figsize=(11, 11), dpi=100)
         self.canvas = FigureCanvas(self.fig)
 
@@ -285,11 +340,8 @@ class App(QtWidgets.QMainWindow):
         self.ax_spec.set_ylabel("Fréquence (Hz)")
         spec_extent = (-self.spec_seconds, 0.0, 0.0, float(self.spec_freqs_view[-1]) if self.spec_freqs_view.size else 0.0)
         self.im_spec = self.ax_spec.imshow(
-            self.spec_img,
-            origin="lower",
-            aspect="auto",
-            extent=spec_extent,
-            interpolation="nearest",
+            self.spec_img, origin="lower", aspect="auto",
+            extent=spec_extent, interpolation="nearest",
         )
         self.ax_spec.set_ylim(0, min(self.spec_max_freq, self.sr / 2))
         self.im_spec.set_clim(-100, 0)
@@ -299,26 +351,23 @@ class App(QtWidgets.QMainWindow):
         self.ax_mfcc.set_ylabel("MFCC index")
         mfcc_extent = (-self.spec_seconds, 0.0, 0.0, float(self.mfcc_cfg.n_mfcc))
         self.im_mfcc = self.ax_mfcc.imshow(
-            self.mfcc_img,
-            origin="lower",
-            aspect="auto",
-            extent=mfcc_extent,
-            interpolation="nearest",
+            self.mfcc_img, origin="lower", aspect="auto",
+            extent=mfcc_extent, interpolation="nearest",
         )
         self.im_mfcc.set_clim(-50, 50)
 
         self.fig.tight_layout()
         root.addWidget(self.canvas)
 
-        # Controls row
+        # Controls
         controls = QtWidgets.QGridLayout()
 
         controls.addWidget(QtWidgets.QLabel("Label:"), 0, 0)
         self.label_edit = QtWidgets.QLineEdit()
-        self.label_edit.setPlaceholderText("ex: claps / oui / non / bruit...")
+        self.label_edit.setPlaceholderText("kick / snare / hihat / speech / silence")
         controls.addWidget(self.label_edit, 0, 1, 1, 2)
 
-        controls.addWidget(QtWidgets.QLabel("Durée enregistrement (s):"), 0, 3)
+        controls.addWidget(QtWidgets.QLabel("Durée enreg. (s):"), 0, 3)
         self.rec_dur = QtWidgets.QDoubleSpinBox()
         self.rec_dur.setRange(0.2, 10.0)
         self.rec_dur.setSingleStep(0.1)
@@ -348,21 +397,46 @@ class App(QtWidgets.QMainWindow):
         self.recog_dur.setValue(1.0)
         controls.addWidget(self.recog_dur, 1, 5)
 
-        self.status = QtWidgets.QLabel("Prêt.")
-        controls.addWidget(self.status, 2, 0, 1, 6)
+        # Seuil de confiance
+        controls.addWidget(QtWidgets.QLabel("Seuil confiance:"), 2, 0)
+        self.conf_spin = QtWidgets.QDoubleSpinBox()
+        self.conf_spin.setRange(0.0, 1.0)
+        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setValue(self.confidence_threshold)
+        controls.addWidget(self.conf_spin, 2, 1)
 
-        # Prediction label - large and visible
+        # Seuil RMS
+        controls.addWidget(QtWidgets.QLabel("Seuil RMS:"), 2, 2)
+        self.rms_spin = QtWidgets.QDoubleSpinBox()
+        self.rms_spin.setRange(0.0, 1.0)
+        self.rms_spin.setSingleStep(0.005)
+        self.rms_spin.setDecimals(4)
+        self.rms_spin.setValue(self.rms_threshold)
+        controls.addWidget(self.rms_spin, 2, 3)
+
+        self.status = QtWidgets.QLabel("Prêt.")
+        controls.addWidget(self.status, 3, 0, 1, 6)
+
+        # Prediction label
         self.pred_label = QtWidgets.QLabel("-")
-        self.pred_label.setStyleSheet("font-size: 48px; font-weight: bold; color: #2196F3; padding: 10px;")
+        self.pred_label.setStyleSheet(
+            "font-size: 48px; font-weight: bold; color: #FF6B1A; padding: 10px;"
+        )
         self.pred_label.setAlignment(QtCore.Qt.AlignCenter)
         root.addWidget(self.pred_label)
+
+        # Confidence bar
+        self.conf_label = QtWidgets.QLabel("confiance: —")
+        self.conf_label.setStyleSheet("font-family: monospace; color: #9C9CA4;")
+        self.conf_label.setAlignment(QtCore.Qt.AlignCenter)
+        root.addWidget(self.conf_label)
 
         root.addLayout(controls)
         self.setCentralWidget(central)
 
         # timer
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(50)  # ms
+        self.timer.setInterval(50)
         self.timer.timeout.connect(self.update_ui)
 
         # stream
@@ -379,20 +453,18 @@ class App(QtWidgets.QMainWindow):
     # ---------------- Audio callback ----------------
 
     def audio_callback(self, indata, frames, time_info, status):
-        if status:
-            pass
         x = indata[:, 0].copy() if self.channels > 1 else indata.reshape(-1).copy()
         try:
             self.q.put_nowait(x)
         except queue.Full:
             pass
 
-    # ---------------- Recording / Training / Recognition ----------------
+    # ---------------- Actions ----------------
 
     def on_record(self):
         label = self.label_edit.text().strip()
         if not label:
-            self.status.setText("⚠️ Entre un label avant d’enregistrer.")
+            self.status.setText("⚠️ Entre un label avant d'enregistrer.")
             return
 
         dur = float(self.rec_dur.value())
@@ -407,17 +479,56 @@ class App(QtWidgets.QMainWindow):
         if X is None:
             return
 
+        # Vérifie qu'on a au moins 2 classes et assez d'échantillons
+        labels, counts = np.unique(y, return_counts=True)
+        if len(labels) < 2:
+            self.status.setText("⚠️ Il faut au moins 2 classes pour entraîner.")
+            return
+        if counts.min() < 2:
+            self.status.setText(f"⚠️ Classe '{labels[counts.argmin()]}' a trop peu d'échantillons.")
+            return
+
+        # Train/test split
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, stratify=y, random_state=42
+            )
+        except ValueError:
+            # fallback sans stratify si trop peu d'échantillons
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+
         clf = Pipeline([
             ("scaler", StandardScaler()),
-            ("svm", LinearSVC()),
+            ("svm", SVC(kernel="rbf", C=10, gamma="scale", probability=True)),
         ])
-        clf.fit(X, y)
+        clf.fit(X_train, y_train)
+
+        # Évaluation
+        y_pred = clf.predict(X_test)
+        report = classification_report(y_test, y_pred, zero_division=0)
+        cm = confusion_matrix(y_test, y_pred, labels=labels)
+
+        print("\n" + "=" * 50)
+        print("CLASSIFICATION REPORT")
+        print("=" * 50)
+        print(report)
+        print("CONFUSION MATRIX (rows=true, cols=pred)")
+        print("Labels:", list(labels))
+        print(cm)
+        print("=" * 50 + "\n")
+
+        # Sauvegarde
         joblib.dump(clf, self.model_path)
         self.model = clf
 
-        labels, counts = np.unique(y, return_counts=True)
         summary = ", ".join([f"{lab}:{cnt}" for lab, cnt in zip(labels, counts)])
-        self.status.setText(f"✅ Modèle entraîné et sauvegardé ({self.model_path}). Dataset: {summary}")
+        acc = (y_pred == y_test).mean()
+        self.status.setText(
+            f"✅ Modèle entraîné. Acc test={acc:.2%}. Dataset: {summary}. "
+            f"Détails dans la console."
+        )
 
     def on_load_model(self):
         if not self.model_path.exists():
@@ -430,13 +541,15 @@ class App(QtWidgets.QMainWindow):
         self.recognition_on = not self.recognition_on
         self.btn_recog.setText(f"Reconnaissance: {'ON' if self.recognition_on else 'OFF'}")
         if self.recognition_on and self.model is None:
-            self.status.setText("⚠️ Reconnaissance ON mais aucun modèle chargé. Clique 'Charger modèle' ou 'Entraîner'.")
+            self.status.setText("⚠️ Aucun modèle chargé.")
         else:
-            self.status.setText("Reconnaissance activée." if self.recognition_on else "Reconnaissance désactivée.")
+            self.status.setText(
+                "Reconnaissance activée." if self.recognition_on else "Reconnaissance désactivée."
+            )
 
     def load_dataset_features(self):
         if not self.dataset_dir.exists():
-            self.status.setText(f"⚠️ Pas de dataset. Le dossier '{self.dataset_dir}' est vide ou inexistant.")
+            self.status.setText(f"⚠️ Dossier '{self.dataset_dir}' introuvable.")
             return None, None
 
         X_list, y_list = [], []
@@ -448,7 +561,6 @@ class App(QtWidgets.QMainWindow):
                 try:
                     x, sr = load_wav_as_float(wav_file)
                     if sr != self.sr:
-                        # skip files with different sample rate
                         continue
                     feat = self.mfcc_extractor.features(x)
                     X_list.append(feat)
@@ -457,7 +569,7 @@ class App(QtWidgets.QMainWindow):
                     print(f"Erreur lecture {wav_file}: {e}")
 
         if len(X_list) == 0:
-            self.status.setText("⚠️ Aucun fichier WAV trouvé dans le dataset.")
+            self.status.setText("⚠️ Aucun WAV trouvé dans le dataset.")
             return None, None
 
         return np.stack(X_list, axis=0), np.array(y_list)
@@ -465,14 +577,12 @@ class App(QtWidgets.QMainWindow):
     # ---------------- UI Update ----------------
 
     def update_ui(self):
-        # Pull all available audio blocks
         chunks = []
         while True:
             try:
                 chunks.append(self.q.get_nowait())
             except queue.Empty:
                 break
-
         if not chunks:
             return
 
@@ -483,7 +593,6 @@ class App(QtWidgets.QMainWindow):
             self.record_buf.append(new_audio)
             total = sum(len(c) for c in self.record_buf)
             if total >= self.record_target_n:
-                # Save recording
                 audio_data = np.concatenate(self.record_buf)[:self.record_target_n]
                 label_dir = self.dataset_dir / self.record_label
                 label_dir.mkdir(parents=True, exist_ok=True)
@@ -493,7 +602,7 @@ class App(QtWidgets.QMainWindow):
                 self.recording_on = False
                 self.record_buf = []
 
-        # Update waveform ring buffer
+        # Waveform ring
         n = len(new_audio)
         if n >= self.wave_n:
             self.wave_ring[:] = new_audio[-self.wave_n:]
@@ -501,14 +610,14 @@ class App(QtWidgets.QMainWindow):
             self.wave_ring = np.roll(self.wave_ring, -n)
             self.wave_ring[-n:] = new_audio
 
-        # Update recognition buffer
+        # Recognition buffer
         if n >= self.recog_buf_max:
             self.recog_buf[:] = new_audio[-self.recog_buf_max:]
         else:
             self.recog_buf = np.roll(self.recog_buf, -n)
             self.recog_buf[-n:] = new_audio
 
-        # Update FFT
+        # FFT
         if n >= self.fft_size:
             self.fft_buf[:] = new_audio[-self.fft_size:]
         else:
@@ -517,47 +626,68 @@ class App(QtWidgets.QMainWindow):
 
         windowed = self.fft_buf * self.fft_win
         spectrum = np.fft.rfft(windowed)
-        mag = np.abs(spectrum)
-        mag = np.maximum(mag, 1e-12)
+        mag = np.maximum(np.abs(spectrum), 1e-12)
         self.fft_db = 20 * np.log10(mag / self.fft_size)
 
-        # Update STFT spectrogram
+        # STFT + MFCC spectrograms
         self.stft_pending = np.concatenate([self.stft_pending, new_audio])
         while len(self.stft_pending) >= self.stft_nfft:
             frame = self.stft_pending[:self.stft_nfft] * self.stft_win
             self.stft_pending = self.stft_pending[self.stft_hop:]
             spectrum = np.fft.rfft(frame)
-            mag = np.abs(spectrum)
-            mag = np.maximum(mag, 1e-12)
+            mag = np.maximum(np.abs(spectrum), 1e-12)
             db = 20 * np.log10(mag)
             db_view = db[self.spec_fmask]
 
             self.spec_img = np.roll(self.spec_img, -1, axis=1)
             self.spec_img[:, -1] = db_view
 
-            # Update MFCC spectrogram
-            power = (mag ** 2).astype(np.float32)
-            power = np.nan_to_num(power, nan=0.0, posinf=1e10, neginf=0.0)
-            power = np.clip(power, 0.0, 1e10)
-            mel_energy = self.mfcc_extractor.mel_fb @ power
-            mel_energy = np.maximum(mel_energy, 1e-12)
+            power = np.clip(np.nan_to_num((mag ** 2).astype(np.float32)), 0.0, 1e10)
+            mel_energy = np.maximum(self.mfcc_extractor.mel_fb @ power, 1e-12)
             log_mel = np.log(mel_energy).astype(np.float32)
             mfcc_frame = (self.mfcc_extractor.dct @ log_mel).astype(np.float32)
 
             self.mfcc_img = np.roll(self.mfcc_img, -1, axis=1)
             self.mfcc_img[:, -1] = mfcc_frame
 
-        # Recognition
+        # Recognition (avec seuils)
         if self.recognition_on and self.model is not None:
             self.recog_seconds = float(self.recog_dur.value())
+            self.confidence_threshold = float(self.conf_spin.value())
+            self.rms_threshold = float(self.rms_spin.value())
+
             recog_n = int(self.recog_seconds * self.sr)
             window = self.recog_buf[-recog_n:]
-            feat = self.mfcc_extractor.features(window).reshape(1, -1)
-            pred = self.model.predict(feat)[0]
-            self.last_prediction = pred
-            self.pred_label.setText(str(pred))
-            self.status.setText(f"🎤 Prédiction: {pred}")
-            print(f"[PREDICTION] {pred}")
+
+            # 1) Filtre énergie
+            rms = compute_rms(window)
+            if rms < self.rms_threshold:
+                self.pred_label.setText("—")
+                self.conf_label.setText(f"silence · rms={rms:.4f}")
+            else:
+                feat = self.mfcc_extractor.features(window).reshape(1, -1)
+                probas = self.model.predict_proba(feat)[0]
+                classes = self.model.classes_
+                top_idx = int(np.argmax(probas))
+                top_class = classes[top_idx]
+                top_proba = float(probas[top_idx])
+
+                # 2) Filtre confiance
+                if top_proba < self.confidence_threshold:
+                    self.pred_label.setText("?")
+                    self.conf_label.setText(
+                        f"incertain · {top_class} {top_proba:.2f} (< {self.confidence_threshold:.2f})"
+                    )
+                else:
+                    self.last_prediction = top_class
+                    self.pred_label.setText(str(top_class))
+                    # affiche top-2 pour debug
+                    sorted_idx = np.argsort(probas)[::-1][:2]
+                    debug = " · ".join(
+                        f"{classes[i]} {probas[i]:.2f}" for i in sorted_idx
+                    )
+                    self.conf_label.setText(debug)
+                    print(f"[PREDICTION] {top_class} ({top_proba:.2f})")
 
         # Redraw
         self.line_wave.set_ydata(self.wave_ring)
