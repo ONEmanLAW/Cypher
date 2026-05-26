@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProgressStore } from '@/stores/progress'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 
 const router = useRouter()
@@ -12,30 +13,31 @@ const GOAL = 21
 const current = ref(0)
 const done = ref(false)
 
+const targetLabel = computed(() => currentSound.value?.label)
+
+const { isListening, lastLabel, lastConfidence, error, toggle, stop } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.6,
+  onHit: () => {
+    if (done.value) return
+    current.value++
+    if (current.value >= GOAL) {
+      done.value = true
+      progress.markDone('02')
+      stop()
+    }
+  },
+})
+
 const segs = computed(() =>
   Array.from({ length: GOAL }, (_, i) => i < current.value)
 )
-
 const pad = (n) => String(n).padStart(2, '0')
 
-function tick() {
-  if (done.value) return
-  current.value++
-  if (current.value >= GOAL) {
-    done.value = true
-    progress.markDone('02')
-  }
-}
-
-function onKey(e) {
-  if (e.code === 'Space') {
-    e.preventDefault()
-    tick()
-  }
-}
-
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onMounted(() => {
+  if (!currentSound.value) router.replace('/')
+})
+onBeforeUnmount(stop)
 </script>
 
 <template>
@@ -74,13 +76,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="stage-pad">
         <div class="e02-center">
           <div class="mono-label" style="letter-spacing: 0.4em">
-            — Repeat the sound · press <em>SPACE</em> —
+            — Make the sound · <em>{{ currentSound?.name }}</em> —
           </div>
+
           <div class="e02-counter">
             <span class="cur">{{ pad(current) }}</span>
             <span class="sep">/</span>
             <span class="tgt">{{ pad(GOAL) }}</span>
           </div>
+
           <div class="e02-bar">
             <div
               v-for="(on, i) in segs"
@@ -88,11 +92,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               :class="['e02-bar-seg', { fill: on }]"
             />
           </div>
+
           <div class="e02-feedback">
             <div class="e02-wave">
               <BaseWaveform :bar-count="48" />
             </div>
+
             <div v-if="done" class="e02-streak-badge">Exercise completed ✓</div>
+            <div v-else-if="error" class="e02-error">⚠ {{ error }}</div>
+            <div v-else-if="!isListening" class="e02-hint">
+              Activate the mic to start
+            </div>
+            <div v-else class="e02-detect">
+              <span>detected:</span>
+              <em>{{ lastLabel || '—' }}</em>
+              <span class="conf">{{ (lastConfidence * 100).toFixed(0) }}%</span>
+            </div>
           </div>
         </div>
       </div>
@@ -106,7 +121,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic"><span class="dot" /> Mic on</span>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggle"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
         <button class="footer-cta" type="button" @click="router.push('/')">
           Skip →
         </button>
@@ -248,6 +271,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  min-height: 60px;
 }
 .e02-wave { width: 280px; }
 
@@ -267,6 +291,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   50%      { transform: scale(1.04); }
 }
 
+/* detection feedback */
+.e02-hint,
+.e02-detect,
+.e02-error {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.e02-detect em { font-style: normal; color: var(--fg-primary); }
+.e02-detect .conf { color: var(--brand); }
+.e02-error { color: var(--state-bad); }
+
 /* footer */
 .exo-footer {
   display: flex;
@@ -277,10 +318,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
+
 .footer-mic {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 4px;
@@ -288,15 +331,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .footer-mic .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active {
+  color: var(--fg-primary);
+  border-color: var(--state-good);
+}
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
 .footer-cta {
   display: inline-flex;
   align-items: center;
