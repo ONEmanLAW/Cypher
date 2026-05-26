@@ -1,30 +1,30 @@
 <script setup>
 /* ============================================================
    EXO 03 · CONTROL MODE
-   10 paliers : 1->5 de plus en plus FORT, 6->10 de plus en
-   plus DOUCEMENT (courbe d'intensité montante puis descendante).
-   Son percussif (beatbox) : détection par PIC.
-   On suit le niveau ; quand il redescend (fin du coup), on
-   compare le MAX atteint à la zone cible -> validation.
-   La barre affiche le PIC FIGÉ du dernier coup (fiable).
-   Le micro est actif en permanence.
+   10 paliers : crescendo puis decrescendo.
+   - Niveau RMS local → mesure l'intensité du pic
+   - Backend → valide que c'est le bon son
+   Un hit valide = pic dans la zone cible ET label correct.
    ============================================================ */
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProgressStore } from '@/stores/progress'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 
 const router = useRouter()
 const progress = useProgressStore()
 const currentSound = computed(() => progress.currentSound)
+const targetLabel = computed(() => currentSound.value?.label)
 
 /* ---------- CONFIG ---------- */
-const SMOOTHING = 0.5         // lissage du niveau
-const GAIN = 5.0              // calibrage sensibilité (RMS -> 0..1)
-const HIT_THRESHOLD = 0.08    // niveau mini pour démarrer un "coup" (anti-parasites)
-const RELEASE_RATIO = 0.6     // fin du coup quand le niveau retombe sous max*ratio
-const FEEDBACK_MS = 900       // durée d'affichage du feedback avant d'avancer
+const SMOOTHING = 0.5
+const GAIN = 5.0
+const HIT_THRESHOLD = 0.08
+const RELEASE_RATIO = 0.6
+const FEEDBACK_MS = 900
+const LABEL_WAIT_MS = 400   // fenêtre d'attente du verdict backend après le pic
 
-/* 10 paliers : intensité cible monte (1->5) puis descend (6->10). */
+/* paliers */
 const INTENSITY = [
   { id: 1,  label: 'soft',      center: 0.18 },
   { id: 2,  label: 'medium',    center: 0.36 },
@@ -38,8 +38,7 @@ const INTENSITY = [
   { id: 10, label: 'very soft', center: 0.10 },
 ]
 
-const HALF = 0.085            // demi-largeur de la zone cible
-
+const HALF = 0.085
 const steps = INTENSITY.map((s) => ({
   ...s,
   min: Math.max(0, s.center - HALF),
@@ -48,19 +47,31 @@ const steps = INTENSITY.map((s) => ({
 
 /* ---------- STATE ---------- */
 const activeIdx = ref(0)
-const level = ref(0)                  // intensité courante 0..1 (lissée, temps réel)
-const lastPeak = ref(0)               // pic figé du dernier coup -> ce qu'on affiche
-const flash = ref(null)               // 'good' | 'low' | 'high'
+const level = ref(0)
+const lastPeak = ref(0)
+const flash = ref(null)  // 'good' | 'low' | 'high' | 'wrong'
 
 const audio = reactive({
   ctx: null, analyser: null, stream: null, data: null, raf: null,
   peak: 0, rising: false, locked: false,
 })
 
+/* dernier verdict du backend (avec timestamp pour matcher au pic) */
+const lastDetection = reactive({ label: null, confidence: 0, at: 0 })
+
+const { isListening, toggle, stop: stopDetector } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.5,                  // un peu permissif, on filtre côté UI
+  onHit: ({ label, confidence }) => {
+    lastDetection.label = label
+    lastDetection.confidence = confidence
+    lastDetection.at = performance.now()
+  },
+})
+
 const activeStep = computed(() => steps[activeIdx.value] || steps[steps.length - 1])
 const isFinished = computed(() => activeIdx.value >= steps.length)
 
-/* ---------- CARROUSEL : 5 bulles centrées sur l'actif ---------- */
 const windowSteps = computed(() => {
   const out = []
   for (let off = -2; off <= 2; off++) {
@@ -77,13 +88,13 @@ const windowSteps = computed(() => {
   return out
 })
 
-/* ---------- FEEDBACK ---------- */
 const feedback = computed(() => {
   switch (flash.value) {
-    case 'good': return { tone: 'good', text: 'Perfect hit' }
-    case 'low':  return { tone: 'low',  text: 'Not loud enough' }
-    case 'high': return { tone: 'high', text: 'Too loud' }
-    default:     return { tone: 'idle', text: 'Hit the sound' }
+    case 'good':  return { tone: 'good',  text: 'Perfect hit' }
+    case 'low':   return { tone: 'low',   text: 'Not loud enough' }
+    case 'high':  return { tone: 'high',  text: 'Too loud' }
+    case 'wrong': return { tone: 'high',  text: 'Wrong sound' }
+    default:      return { tone: 'idle',  text: isListening.value ? 'Hit the sound' : 'Activate the mic' }
   }
 })
 
@@ -92,13 +103,12 @@ const zoneStyle = computed(() => ({
   width: ((activeStep.value.max - activeStep.value.min) * 100) + '%',
 }))
 
-/* La barre affiche le pic figé après un coup, sinon le niveau live. */
 const displayLevel = computed(() =>
   flash.value ? lastPeak.value : level.value
 )
 
-/* ---------- MICRO (ON en permanence) ---------- */
-async function startMic() {
+/* ---------- MICRO LOCAL (pour mesurer l'intensité) ---------- */
+async function startLocalMic() {
   try {
     audio.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -112,28 +122,22 @@ async function startMic() {
     audio.data = new Uint8Array(audio.analyser.fftSize)
     loop()
   } catch (e) {
-    console.warn('[Exo03] micro indisponible', e)
+    console.warn('[Exo03] micro local indisponible', e)
   }
 }
 
-function stopMic() {
+function stopLocalMic() {
   if (audio.raf) cancelAnimationFrame(audio.raf)
   audio.stream?.getTracks().forEach((t) => t.stop())
   audio.ctx?.close()
   audio.ctx = audio.analyser = audio.stream = audio.data = null
 }
 
-/* ---------- BOUCLE : RMS + détection de pic ---------- */
 function loop() {
   if (!audio.analyser) return
-
-  // FIX micro qui se coupe : le contexte peut passer "suspended" -> on le réveille
-  if (audio.ctx && audio.ctx.state === 'suspended') {
-    audio.ctx.resume().catch(() => {})
-  }
+  if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {})
 
   audio.analyser.getByteTimeDomainData(audio.data)
-
   let sum = 0
   for (let i = 0; i < audio.data.length; i++) {
     const v = (audio.data[i] - 128) / 128
@@ -147,7 +151,7 @@ function loop() {
   audio.raf = requestAnimationFrame(loop)
 }
 
-/* ---------- DÉTECTION DE PIC ---------- */
+/* ---------- DÉTECTION DE PIC + VALIDATION LABEL ---------- */
 function detectPeak() {
   if (audio.locked || isFinished.value) return
   const l = level.value
@@ -167,18 +171,48 @@ function detectPeak() {
 
 function evaluateHit(peak) {
   const { min, max } = activeStep.value
-  lastPeak.value = peak                 // on fige le pic -> barre fiable
+  lastPeak.value = peak
+
+  // 1. vérifie l'intensité
   if (peak < min) {
     flash.value = 'low'
-    resetFlash()
-  } else if (peak > max) {
-    flash.value = 'high'
-    resetFlash()
-  } else {
-    flash.value = 'good'
-    audio.locked = true
-    setTimeout(nextStep, FEEDBACK_MS)
+    return resetFlash()
   }
+  if (peak > max) {
+    flash.value = 'high'
+    return resetFlash()
+  }
+
+  // 2. intensité OK → on attend / vérifie le label
+  audio.locked = true
+  checkLabelAndValidate()
+}
+
+/* Attend que le backend confirme le bon son (le verdict peut arriver
+   juste après le pic à cause du chunk de 0.5s). */
+function checkLabelAndValidate(startedAt = performance.now()) {
+  const age = performance.now() - lastDetection.at
+  console.log('[E03] check', {
+    target: targetLabel.value,
+    detected: lastDetection.label,
+    conf: lastDetection.confidence,
+    age_ms: Math.round(age),
+  })
+  // verdict récent ?
+  const isRecent = performance.now() - lastDetection.at < LABEL_WAIT_MS + 200
+  if (isRecent && lastDetection.label === targetLabel.value) {
+    flash.value = 'good'
+    setTimeout(nextStep, FEEDBACK_MS)
+    return
+  }
+  // toujours pas → on attend un peu (jusqu'à LABEL_WAIT_MS)
+  if (performance.now() - startedAt < LABEL_WAIT_MS) {
+    setTimeout(() => checkLabelAndValidate(startedAt), 60)
+    return
+  }
+  // verdict mauvais ou absent
+  flash.value = 'wrong'
+  resetFlash()
 }
 
 function resetFlash() {
@@ -203,7 +237,6 @@ function nextStep() {
   }
 }
 
-/* ---------- RESTART ---------- */
 function restart() {
   activeIdx.value = 0
   flash.value = null
@@ -215,17 +248,25 @@ function restart() {
 }
 
 function skip() {
-  stopMic()
+  stopLocalMic()
+  stopDetector()
   router.push('/')
 }
 
-onMounted(startMic)
-onBeforeUnmount(stopMic)
+onMounted(() => {
+  if (!currentSound.value) router.replace('/')
+  else startLocalMic()  // l'analyseur local démarre. Le backend démarre via le toggle mic.
+})
+
+onBeforeUnmount(() => {
+  stopLocalMic()
+  stopDetector()
+})
 </script>
 
 <template>
   <div class="exo">
-    <!-- ============ HEADER ============ -->
+    <!-- header -->
     <header class="exo-header">
       <div class="exo-header-side">
         <button class="exo-back" type="button" @click="router.push('/exercises')">
@@ -254,11 +295,9 @@ onBeforeUnmount(stopMic)
       </div>
     </header>
 
-    <!-- ============ STAGE ============ -->
+    <!-- stage -->
     <div class="stage">
       <div class="stage-pad">
-
-        <!-- ===== center : carrousel 5 bulles ===== -->
         <div class="e03-center">
           <div class="mono-label" style="letter-spacing: 0.4em">
             — Match the target intensity —
@@ -309,23 +348,20 @@ onBeforeUnmount(stopMic)
             </template>
           </div>
 
-          <!-- ===== intensity meter ===== -->
+          <!-- intensity meter -->
           <div class="e03-meter">
             <div class="mono-label e03-meter-caption">
               Match your hit to the green target zone
             </div>
             <div class="e03-meter-track">
-              <!-- zone cible -->
               <div class="e03-meter-zone" :style="zoneStyle">
                 <span class="e03-zone-tag">target</span>
               </div>
-              <!-- niveau / pic affiché -->
               <div
                 class="e03-meter-fill"
                 :class="feedback.tone"
                 :style="{ width: (displayLevel * 100) + '%' }"
               />
-              <!-- curseur -->
               <div class="e03-meter-cursor" :style="{ left: (displayLevel * 100) + '%' }" />
             </div>
           </div>
@@ -333,7 +369,7 @@ onBeforeUnmount(stopMic)
       </div>
     </div>
 
-    <!-- ============ FOOTER ============ -->
+    <!-- footer -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
         <button class="footer-btn" type="button">↺ Review the demo</button>
@@ -341,7 +377,15 @@ onBeforeUnmount(stopMic)
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic on"><span class="dot" /> Mic on</span>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggle"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
         <button class="footer-cta" type="button" @click="skip">Skip →</button>
       </div>
     </footer>
@@ -349,360 +393,98 @@ onBeforeUnmount(stopMic)
 </template>
 
 <style scoped>
-.exo {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-stage);
-}
+/* ⬇️ même CSS que ton fichier actuel, je ne change qu'une chose : .footer-mic
+   devient un <button> cliquable, donc je remplace le bloc footer-mic. */
 
-/* ---------- HEADER (identique Exo 02) ---------- */
-.exo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
+.exo { height: 100%; display: flex; flex-direction: column; background: var(--surface-stage); }
+.exo-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .exo-header-side { flex: 1; display: flex; align-items: center; }
 .exo-header-side.right { justify-content: flex-end; }
-
-.exo-back,
-.footer-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  color: var(--fg-secondary);
-  border: 1px solid var(--line);
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color var(--dur-fast), color var(--dur-fast);
-}
-.exo-back:hover,
-.footer-btn:hover { border-color: var(--brand); color: var(--fg-primary); }
-
-.exo-header-num {
-  margin-left: 24px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
+.exo-back, .footer-btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--fg-secondary); border: 1px solid var(--line); padding: 8px 12px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; letter-spacing: var(--ls-label); text-transform: uppercase; cursor: pointer; transition: border-color var(--dur-fast), color var(--dur-fast); }
+.exo-back:hover, .footer-btn:hover { border-color: var(--brand); color: var(--fg-primary); }
+.exo-header-num { margin-left: 24px; font-family: var(--font-mono); font-size: 12px; letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--fg-muted); }
 .exo-header-num em { font-style: normal; color: var(--fg-primary); }
 .exo-header-title { text-align: center; }
-.exo-header-title .kicker {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--ls-tag);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-  margin-bottom: 6px;
-}
-.exo-header-title .name {
-  font-family: var(--font-display);
-  font-size: 24px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  line-height: var(--lh-tight);
-}
-.exo-step {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
+.exo-header-title .kicker { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--ls-tag); text-transform: uppercase; color: var(--fg-muted); margin-bottom: 6px; }
+.exo-header-title .name { font-family: var(--font-display); font-size: 24px; letter-spacing: var(--ls-tight); text-transform: uppercase; line-height: var(--lh-tight); }
+.exo-step { font-family: var(--font-mono); font-size: 12px; letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--fg-muted); }
 .exo-step em { font-style: normal; color: var(--fg-primary); }
 .exo-step-dots { display: inline-flex; gap: 4px; margin-left: 12px; }
 .exo-step-dot { width: 10px; height: 10px; background: var(--ink-4); }
 .exo-step-dot.done { background: var(--orange-700); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
-/* ---------- STAGE ---------- */
 .stage { flex: 1; display: flex; min-height: 0; }
-.stage-pad {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 32px 40px;
-}
-.mono-label {
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 10px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
+.stage-pad { flex: 1; display: flex; flex-direction: column; padding: 32px 40px; }
+.mono-label { font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--fg-muted); }
 .mono-label em { font-style: normal; color: var(--brand); }
 
-/* ---------- CENTER ---------- */
-.e03-center {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 40px;
-}
-
-/* ---------- CARROUSEL 5 BULLES ---------- */
-.e03-track {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 28px;
-}
-.e03-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 150px;
-  transition: opacity var(--dur-base) var(--ease-out-snap),
-              transform var(--dur-base) var(--ease-out-snap);
-}
-.e03-node[data-slot="-2"],
-.e03-node[data-slot="2"]  { opacity: 0.35; transform: scale(0.78); }
-.e03-node[data-slot="-1"],
-.e03-node[data-slot="1"]  { opacity: 0.7;  transform: scale(0.9); }
-.e03-node[data-slot="0"]  { opacity: 1;    transform: scale(1.1); }
+.e03-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px; }
+.e03-track { display: flex; align-items: center; justify-content: center; gap: 28px; }
+.e03-node { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 150px; transition: opacity var(--dur-base) var(--ease-out-snap), transform var(--dur-base) var(--ease-out-snap); }
+.e03-node[data-slot="-2"], .e03-node[data-slot="2"] { opacity: 0.35; transform: scale(0.78); }
+.e03-node[data-slot="-1"], .e03-node[data-slot="1"] { opacity: 0.7; transform: scale(0.9); }
+.e03-node[data-slot="0"] { opacity: 1; transform: scale(1.1); }
 .e03-node.empty { visibility: hidden; }
-
-.e03-bubble {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  font-family: var(--font-display);
-  font-size: 48px;
-  transition: background var(--dur-base) var(--ease-out-snap),
-              box-shadow var(--dur-base) var(--ease-out-snap);
-}
-.e03-bubble.todo {
-  background: transparent;
-  border: 2px solid var(--line);
-  color: var(--fg-muted);
-}
-.e03-bubble.done {
-  background: var(--ink-3);
-  border: 2px solid var(--ink-4);
-  color: var(--state-good);
-}
-.e03-bubble.active {
-  background: var(--brand);
-  color: var(--fg-on-orange);
-  box-shadow: var(--shadow-glow);
-}
+.e03-bubble { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; border-radius: 999px; font-family: var(--font-display); font-size: 48px; transition: background var(--dur-base) var(--ease-out-snap), box-shadow var(--dur-base) var(--ease-out-snap); }
+.e03-bubble.todo { background: transparent; border: 2px solid var(--line); color: var(--fg-muted); }
+.e03-bubble.done { background: var(--ink-3); border: 2px solid var(--ink-4); color: var(--state-good); }
+.e03-bubble.active { background: var(--brand); color: var(--fg-on-orange); box-shadow: var(--shadow-glow); }
 .e03-check { font-size: 52px; }
+.e03-label { font-family: var(--font-ui); font-weight: 600; font-size: 14px; color: var(--fg-secondary); text-transform: uppercase; letter-spacing: var(--ls-tight); transition: all var(--dur-base) var(--ease-out-snap); }
+.e03-label.strong { font-family: var(--font-display); font-weight: 400; font-size: 32px; color: var(--brand); }
+.e03-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--fg-muted); }
 
-.e03-label {
-  font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--fg-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--ls-tight);
-  transition: all var(--dur-base) var(--ease-out-snap);
-}
-.e03-label.strong {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 32px;
-  color: var(--brand);
-}
-.e03-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-
-/* ---------- FEEDBACK PILL ---------- */
-.e03-feedback-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.e03-feedback-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-display);
-  font-size: 16px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  padding: 10px 24px;
-  border-radius: 2px;
-  border: 2px solid transparent;
-  transition: all var(--dur-base) var(--ease-out-snap);
-}
+.e03-feedback-row { display: flex; align-items: center; gap: 12px; }
+.e03-feedback-pill { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 16px; letter-spacing: var(--ls-tight); text-transform: uppercase; padding: 10px 24px; border-radius: 2px; border: 2px solid transparent; transition: all var(--dur-base) var(--ease-out-snap); }
 .e03-feedback-icon { font-size: 13px; }
+.e03-feedback-pill.idle { background: var(--ink-3); color: var(--fg-muted); border-color: var(--line); }
+.e03-feedback-pill.low { background: var(--orange-900); color: var(--orange-200); border-color: var(--orange-700); }
+.e03-feedback-pill.high { background: var(--state-bad); color: var(--ink-0); }
+.e03-feedback-pill.good { background: var(--state-good); color: var(--ink-0); animation: hit-pop var(--dur-stage) var(--ease-bounce); }
+.e03-feedback-pill.done { background: var(--brand); color: var(--fg-on-orange); animation: hit-pop var(--dur-stage) var(--ease-bounce); }
+.e03-restart-btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--fg-primary); border: 2px solid var(--brand); padding: 10px 24px; border-radius: 2px; font-family: var(--font-display); font-size: 16px; letter-spacing: var(--ls-tight); text-transform: uppercase; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.e03-restart-btn:hover { background: var(--brand); color: var(--fg-on-orange); }
+@keyframes hit-pop { 0% { transform: scale(0.7); } 45% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
-.e03-feedback-pill.idle {
-  background: var(--ink-3);
-  color: var(--fg-muted);
-  border-color: var(--line);
-}
-.e03-feedback-pill.low {
-  background: var(--orange-900);
-  color: var(--orange-200);
-  border-color: var(--orange-700);
-}
-.e03-feedback-pill.high {
-  background: var(--state-bad);
-  color: var(--ink-0);
-}
-.e03-feedback-pill.good {
-  background: var(--state-good);
-  color: var(--ink-0);
-  animation: hit-pop var(--dur-stage) var(--ease-bounce);
-}
-/* fin de série : couleur brand */
-.e03-feedback-pill.done {
-  background: var(--brand);
-  color: var(--fg-on-orange);
-  animation: hit-pop var(--dur-stage) var(--ease-bounce);
-}
-
-/* bouton restart, visible uniquement à la fin */
-.e03-restart-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  color: var(--fg-primary);
-  border: 2px solid var(--brand);
-  padding: 10px 24px;
-  border-radius: 2px;
-  font-family: var(--font-display);
-  font-size: 16px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.e03-restart-btn:hover {
-  background: var(--brand);
-  color: var(--fg-on-orange);
-}
-@keyframes hit-pop {
-  0%   { transform: scale(0.7); }
-  45%  { transform: scale(1.12); }
-  100% { transform: scale(1); }
-}
-
-/* ---------- INTENSITY METER ---------- */
-.e03-meter {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  width: 560px;
-  max-width: 80vw;
-}
+.e03-meter { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 560px; max-width: 80vw; }
 .e03-meter-caption { color: var(--fg-muted); }
-.e03-meter-track {
-  position: relative;
-  width: 100%;
-  height: 36px;
-  background: var(--ink-3);
-  border: 1px solid var(--line);
-  overflow: hidden;
-}
-.e03-meter-zone {
-  position: absolute;
-  top: 0; bottom: 0;
-  background: rgba(77, 208, 140, 0.14);
-  border-left: 1.5px dashed var(--state-good);
-  border-right: 1.5px dashed var(--state-good);
-}
-.e03-zone-tag {
-  position: absolute;
-  top: -16px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--state-good);
-}
-.e03-meter-fill {
-  position: absolute;
-  top: 0; left: 0; bottom: 0;
-  transition: width var(--dur-flash) linear, background var(--dur-flash) linear;
-}
+.e03-meter-track { position: relative; width: 100%; height: 36px; background: var(--ink-3); border: 1px solid var(--line); overflow: hidden; }
+.e03-meter-zone { position: absolute; top: 0; bottom: 0; background: rgba(77, 208, 140, 0.14); border-left: 1.5px dashed var(--state-good); border-right: 1.5px dashed var(--state-good); }
+.e03-zone-tag { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--state-good); }
+.e03-meter-fill { position: absolute; top: 0; left: 0; bottom: 0; transition: width var(--dur-flash) linear, background var(--dur-flash) linear; }
 .e03-meter-fill.idle { background: var(--ink-5); }
-.e03-meter-fill.low  { background: var(--orange-500); }
+.e03-meter-fill.low { background: var(--orange-500); }
 .e03-meter-fill.good { background: var(--state-good); }
 .e03-meter-fill.high { background: var(--state-bad); }
-.e03-meter-cursor {
-  position: absolute;
-  top: -4px; bottom: -4px;
-  width: 2px;
-  background: var(--fg-primary);
-  transition: left var(--dur-flash) linear;
-}
+.e03-meter-cursor { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg-primary); transition: left var(--dur-flash) linear; }
 
-/* ---------- FOOTER (identique Exo 02) ---------- */
-.exo-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
-}
+.exo-footer { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-top: 1px solid var(--line); flex-shrink: 0; }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
+
+/* mic devient un bouton toggle (comme Exo02) */
 .footer-mic {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--fg-secondary);
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent; border: 1px solid var(--line);
+  padding: 8px 12px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: var(--ls-label); text-transform: uppercase;
+  color: var(--fg-muted); cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
-.footer-mic.on { border-color: var(--state-good); color: var(--fg-primary); }
 .footer-mic .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
+  width: 8px; height: 8px; border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active { color: var(--fg-primary); border-color: var(--state-good); }
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
-.footer-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--brand);
-  color: var(--fg-on-orange);
-  border: none;
-  padding: 12px 20px;
-  border-radius: 4px;
-  font-family: var(--font-display);
-  font-size: 16px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background-color var(--dur-fast);
-}
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.footer-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--brand); color: var(--fg-on-orange); border: none; padding: 12px 20px; border-radius: 4px; font-family: var(--font-display); font-size: 16px; letter-spacing: var(--ls-tight); text-transform: uppercase; cursor: pointer; transition: background-color var(--dur-fast); }
 .footer-cta:hover { background: var(--brand-hover); }
 </style>
