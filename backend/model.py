@@ -75,7 +75,6 @@ def center_on_onset(x: np.ndarray, sr: int, window_s: float = 0.5) -> np.ndarray
     """Centre le signal sur son pic d'énergie. Sortie de longueur fixe = window_s * sr."""
     n = int(window_s * sr)
     if len(x) <= n:
-        # pad si trop court
         pad = n - len(x)
         return np.pad(x, (0, pad), mode="constant")
 
@@ -135,7 +134,6 @@ class MFCCConfig:
     n_mfcc: int = 13
     fmin: float = 20.0
     fmax: float = 20000.0
-    # paramètres d'extraction de features
     normalize: bool = True
     onset_center: bool = True
     onset_window_s: float = 0.5
@@ -189,18 +187,13 @@ class MFCCExtractor:
         Features fixes: mean+std de MFCC + mean+std de delta MFCC.
         Dimension = 4 * n_mfcc
         """
-        # 1) Onset centering (aligne le son dans la fenêtre)
         if self.cfg.onset_center:
             x = center_on_onset(x, self.cfg.sr, window_s=self.cfg.onset_window_s)
 
-        # 2) Peak normalization (rend le modèle invariant au volume)
         if self.cfg.normalize:
             x = peak_normalize(x)
 
-        # 3) MFCC frames
         m = self.mfcc_frames(x)  # [T, n_mfcc]
-
-        # 4) Delta MFCC (dynamique temporelle)
         delta = np.diff(m, axis=0, prepend=m[:1])
 
         mu_m = m.mean(axis=0)
@@ -216,8 +209,8 @@ class MFCCExtractor:
 class App(QtWidgets.QMainWindow):
     def __init__(
         self,
-        dataset_dir="dataset",
-        model_path="model.joblib",
+        dataset_dir=None,
+        model_path=None,
         samplerate=48000,
         channels=1,
         blocksize=1024,
@@ -229,21 +222,21 @@ class App(QtWidgets.QMainWindow):
         spec_max_freq=20000,
         n_mels=40,
         n_mfcc=13,
-        # Nouveaux paramètres
         confidence_threshold=0.6,
         rms_threshold=0.01,
     ):
         super().__init__()
         self.setWindowTitle("Beatbox recognizer · v2")
 
-        self.dataset_dir = Path(dataset_dir)
-        self.model_path = Path(model_path)
+        # Toujours relatif au dossier du script (backend/)
+        script_dir = Path(__file__).parent.resolve()
+        self.dataset_dir = Path(dataset_dir) if dataset_dir else script_dir / "dataset"
+        self.model_path = Path(model_path) if model_path else script_dir / "model.joblib"
 
         self.sr = int(samplerate)
         self.channels = int(channels)
         self.blocksize = int(blocksize)
 
-        # Nouveaux seuils
         self.confidence_threshold = float(confidence_threshold)
         self.rms_threshold = float(rms_threshold)
 
@@ -414,7 +407,7 @@ class App(QtWidgets.QMainWindow):
         self.rms_spin.setValue(self.rms_threshold)
         controls.addWidget(self.rms_spin, 2, 3)
 
-        self.status = QtWidgets.QLabel("Prêt.")
+        self.status = QtWidgets.QLabel(f"Prêt. Dataset: {self.dataset_dir} · Modèle: {self.model_path}")
         controls.addWidget(self.status, 3, 0, 1, 6)
 
         # Prediction label
@@ -479,7 +472,6 @@ class App(QtWidgets.QMainWindow):
         if X is None:
             return
 
-        # Vérifie qu'on a au moins 2 classes et assez d'échantillons
         labels, counts = np.unique(y, return_counts=True)
         if len(labels) < 2:
             self.status.setText("⚠️ Il faut au moins 2 classes pour entraîner.")
@@ -488,13 +480,11 @@ class App(QtWidgets.QMainWindow):
             self.status.setText(f"⚠️ Classe '{labels[counts.argmin()]}' a trop peu d'échantillons.")
             return
 
-        # Train/test split
         try:
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, stratify=y, random_state=42
             )
         except ValueError:
-            # fallback sans stratify si trop peu d'échantillons
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42
             )
@@ -505,7 +495,6 @@ class App(QtWidgets.QMainWindow):
         ])
         clf.fit(X_train, y_train)
 
-        # Évaluation
         y_pred = clf.predict(X_test)
         report = classification_report(y_test, y_pred, zero_division=0)
         cm = confusion_matrix(y_test, y_pred, labels=labels)
@@ -519,7 +508,6 @@ class App(QtWidgets.QMainWindow):
         print(cm)
         print("=" * 50 + "\n")
 
-        # Sauvegarde
         joblib.dump(clf, self.model_path)
         self.model = clf
 
@@ -659,7 +647,6 @@ class App(QtWidgets.QMainWindow):
             recog_n = int(self.recog_seconds * self.sr)
             window = self.recog_buf[-recog_n:]
 
-            # 1) Filtre énergie
             rms = compute_rms(window)
             if rms < self.rms_threshold:
                 self.pred_label.setText("—")
@@ -672,7 +659,6 @@ class App(QtWidgets.QMainWindow):
                 top_class = classes[top_idx]
                 top_proba = float(probas[top_idx])
 
-                # 2) Filtre confiance
                 if top_proba < self.confidence_threshold:
                     self.pred_label.setText("?")
                     self.conf_label.setText(
@@ -681,7 +667,6 @@ class App(QtWidgets.QMainWindow):
                 else:
                     self.last_prediction = top_class
                     self.pred_label.setText(str(top_class))
-                    # affiche top-2 pour debug
                     sorted_idx = np.argsort(probas)[::-1][:2]
                     debug = " · ".join(
                         f"{classes[i]} {probas[i]:.2f}" for i in sorted_idx
