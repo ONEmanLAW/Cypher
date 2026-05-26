@@ -1,18 +1,16 @@
 <script setup>
 /* ============================================================
    EXO 03 · CONTROL MODE
-   10 paliers : crescendo puis decrescendo.
-   - Niveau RMS local → mesure l'intensité du pic
-   - Backend → valide que c'est le bon son
-   Un hit valide = pic dans la zone cible ET label correct.
    ============================================================ */
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 const targetLabel = computed(() => currentSound.value?.label)
 
@@ -22,9 +20,8 @@ const GAIN = 5.0
 const HIT_THRESHOLD = 0.08
 const RELEASE_RATIO = 0.6
 const FEEDBACK_MS = 900
-const LABEL_WAIT_MS = 400   // fenêtre d'attente du verdict backend après le pic
+const LABEL_WAIT_MS = 400
 
-/* paliers */
 const INTENSITY = [
   { id: 1,  label: 'soft',      center: 0.18 },
   { id: 2,  label: 'medium',    center: 0.36 },
@@ -45,23 +42,21 @@ const steps = INTENSITY.map((s) => ({
   max: Math.min(1, s.center + HALF),
 }))
 
-/* ---------- STATE ---------- */
 const activeIdx = ref(0)
 const level = ref(0)
 const lastPeak = ref(0)
-const flash = ref(null)  // 'good' | 'low' | 'high' | 'wrong'
+const flash = ref(null)
 
 const audio = reactive({
   ctx: null, analyser: null, stream: null, data: null, raf: null,
   peak: 0, rising: false, locked: false,
 })
 
-/* dernier verdict du backend (avec timestamp pour matcher au pic) */
 const lastDetection = reactive({ label: null, confidence: 0, at: 0 })
 
 const { isListening, toggle, stop: stopDetector } = useBeatboxDetector({
   targetLabel,
-  threshold: 0.5,                  // un peu permissif, on filtre côté UI
+  threshold: 0.5,
   onHit: ({ label, confidence }) => {
     lastDetection.label = label
     lastDetection.confidence = confidence
@@ -107,7 +102,6 @@ const displayLevel = computed(() =>
   flash.value ? lastPeak.value : level.value
 )
 
-/* ---------- MICRO LOCAL (pour mesurer l'intensité) ---------- */
 async function startLocalMic() {
   try {
     audio.stream = await navigator.mediaDevices.getUserMedia({
@@ -151,7 +145,6 @@ function loop() {
   audio.raf = requestAnimationFrame(loop)
 }
 
-/* ---------- DÉTECTION DE PIC + VALIDATION LABEL ---------- */
 function detectPeak() {
   if (audio.locked || isFinished.value) return
   const l = level.value
@@ -173,7 +166,6 @@ function evaluateHit(peak) {
   const { min, max } = activeStep.value
   lastPeak.value = peak
 
-  // 1. vérifie l'intensité
   if (peak < min) {
     flash.value = 'low'
     return resetFlash()
@@ -183,34 +175,21 @@ function evaluateHit(peak) {
     return resetFlash()
   }
 
-  // 2. intensité OK → on attend / vérifie le label
   audio.locked = true
   checkLabelAndValidate()
 }
 
-/* Attend que le backend confirme le bon son (le verdict peut arriver
-   juste après le pic à cause du chunk de 0.5s). */
 function checkLabelAndValidate(startedAt = performance.now()) {
-  const age = performance.now() - lastDetection.at
-  console.log('[E03] check', {
-    target: targetLabel.value,
-    detected: lastDetection.label,
-    conf: lastDetection.confidence,
-    age_ms: Math.round(age),
-  })
-  // verdict récent ?
   const isRecent = performance.now() - lastDetection.at < LABEL_WAIT_MS + 200
   if (isRecent && lastDetection.label === targetLabel.value) {
     flash.value = 'good'
     setTimeout(nextStep, FEEDBACK_MS)
     return
   }
-  // toujours pas → on attend un peu (jusqu'à LABEL_WAIT_MS)
   if (performance.now() - startedAt < LABEL_WAIT_MS) {
     setTimeout(() => checkLabelAndValidate(startedAt), 60)
     return
   }
-  // verdict mauvais ou absent
   flash.value = 'wrong'
   resetFlash()
 }
@@ -250,12 +229,12 @@ function restart() {
 function skip() {
   stopLocalMic()
   stopDetector()
-  router.push('/')
+  goToNext()
 }
 
 onMounted(() => {
   if (!currentSound.value) router.replace('/')
-  else startLocalMic()  // l'analyseur local démarre. Le backend démarre via le toggle mic.
+  else startLocalMic()
 })
 
 onBeforeUnmount(() => {
@@ -303,7 +282,6 @@ onBeforeUnmount(() => {
             — Match the target intensity —
           </div>
 
-          <!-- carrousel -->
           <div class="e03-track">
             <template v-for="w in windowSteps" :key="w.idx">
               <div v-if="w.step" class="e03-node" :data-slot="w.slot">
@@ -324,7 +302,6 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <!-- feedback pill -->
           <div class="e03-feedback-row">
             <template v-if="!isFinished">
               <div class="e03-feedback-pill" :class="feedback.tone">
@@ -348,7 +325,6 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <!-- intensity meter -->
           <div class="e03-meter">
             <div class="mono-label e03-meter-caption">
               Match your hit to the green target zone
@@ -393,9 +369,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* ⬇️ même CSS que ton fichier actuel, je ne change qu'une chose : .footer-mic
-   devient un <button> cliquable, donc je remplace le bloc footer-mic. */
-
 .exo { height: 100%; display: flex; flex-direction: column; background: var(--surface-stage); }
 .exo-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .exo-header-side { flex: 1; display: flex; align-items: center; }
@@ -462,7 +435,6 @@ onBeforeUnmount(() => {
 .exo-footer { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-top: 1px solid var(--line); flex-shrink: 0; }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
 
-/* mic devient un bouton toggle (comme Exo02) */
 .footer-mic {
   display: inline-flex; align-items: center; gap: 8px;
   background: transparent; border: 1px solid var(--line);

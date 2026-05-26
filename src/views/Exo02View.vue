@@ -3,10 +3,12 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 
 const GOAL = 21
@@ -33,6 +35,11 @@ const segs = computed(() =>
   Array.from({ length: GOAL }, (_, i) => i < current.value)
 )
 const pad = (n) => String(n).padStart(2, '0')
+
+function skip() {
+  stop()
+  goToNext()
+}
 
 onMounted(() => {
   if (!currentSound.value) router.replace('/')
@@ -130,7 +137,7 @@ onBeforeUnmount(stop)
           <span class="dot" />
           {{ isListening ? 'Mic on' : 'Mic off' }}
         </button>
-        <button class="footer-cta" type="button" @click="router.push('/')">
+        <button class="footer-cta" type="button" @click="skip">
           Skip →
         </button>
       </div>

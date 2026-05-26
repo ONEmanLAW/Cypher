@@ -3,9 +3,11 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 import { useProgressStore } from '@/stores/progress'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 
 /* ============================================================
@@ -363,7 +365,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Skip →</button>
+        <button class="footer-cta" type="button" @click="goToNext">Skip →</button>
       </div>
     </footer>
   </div>
@@ -472,7 +474,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-/* ===== Big play overlay (avant le premier lancement) ===== */
 .e01-video-overlay {
   position: absolute;
   inset: 0;
@@ -577,7 +578,6 @@ onBeforeUnmount(() => {
 }
 .e01-icon-btn.primary:hover { background: var(--brand-hover); }
 
-/* ===== Volume control · fix hover gap ===== */
 .ctrl-volume { position: relative; }
 
 .vol-popover {
@@ -590,7 +590,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   padding: 12px 8px;
   border-radius: 4px;
-  /* padding-bottom crée l'espace visuel SANS trou hover */
   margin-bottom: 0;
   padding-bottom: 16px;
 }
