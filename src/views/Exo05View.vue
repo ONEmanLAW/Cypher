@@ -2,38 +2,26 @@
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
 const currentSound = computed(() => progress.currentSound)
+const targetLabel = computed(() => currentSound.value?.label)
 
 const completedDiffs = ref(new Set())
 
 /* ============================================================
-   EXO 05 · RHYTHM COPY — call / response, kick only
-   ------------------------------------------------------------
-   Flow pédagogique :
-   1. LISTEN  — la ligne prof défile avec le son (Play the call)
-   2. SETUP   — le joueur règle "Teacher guide" ON / OFF
-   3. PLAY    — les 2 lignes défilent, le joueur tape Espace
-                pour poser un kick. Si guide OFF, la ligne prof
-                est masquée pendant qu'il joue (à l'oreille).
-   4. COMPARE — la ligne prof réapparaît, on compare et on note.
+   EXO 05 · RHYTHM COPY — call / response
+   Le joueur fait le SON (kick / hihat / snare selon le son choisi)
+   au lieu d'appuyer sur Espace.
    ============================================================ */
 
-const BAR_DIV = 4         // séparateur de mesure : tous les N de la subdivision
-
-/* tolérance de placement (en cellules) — resserrée si grille fine */
+const BAR_DIV = 4
 const TOL_GOOD = 0.6
 const TOL_WARN = 1.3
 
-/* ---------- patterns par difficulté ----------
-   chaque difficulté a SA grille (cells) et SON nombre de kicks.
-   - cells : nombre de cellules de la timeline
-   - bpm   : vitesse → moins de cells = curseur plus rapide à parcourir
-   - kicks : index de cellule de chaque kick (à ajuster librement)
-   NB : positions régulières par défaut, à régler à l'oreille. */
 const PATTERNS = {
   easy: {
     label: 'Easy',
@@ -58,31 +46,24 @@ const PATTERNS = {
 const difficulty = ref('easy')
 const teacherPattern = computed(() => PATTERNS[difficulty.value].kicks)
 const bpm = computed(() => PATTERNS[difficulty.value].bpm)
-/* BEATS = nombre de cellules, propre à chaque difficulté */
 const BEATS = computed(() => PATTERNS[difficulty.value].cells)
 
-/* ---------- réponse JOUEUR : positions posées { cell } ---------- */
 const playerHits = ref([])
 
-/* ---------- état ---------- */
-const phase = ref('listen')        // listen | play | compare
-const teacherGuide = ref(true)     // visuel du prof pendant la phase play
+const phase = ref('listen')
+const teacherGuide = ref(true)
 const hasHeardCall = ref(false)
 const playhead = ref(0)
 const isRunning = ref(false)
 
-/* durée : 1 cellule = 1 double-croche. moins de cellules → timeline
-   plus courte → curseur plus rapide à parcourir d'un bout à l'autre. */
 const beatMs = computed(() => 60000 / bpm.value)
-const cellMs = computed(() => beatMs.value / 4)        // 4 cellules par temps
+const cellMs = computed(() => beatMs.value / 4)
 const loopMs = computed(() => cellMs.value * BEATS.value)
 const playheadPct = computed(() => (playhead.value / BEATS.value) * 100)
 
-/* la ligne prof est visible sauf en phase play avec guide coupé */
 const teacherVisible = computed(
   () => !(phase.value === 'play' && !teacherGuide.value)
 )
-/* labels orange : prof actif en listen + compare + play(guidé) */
 const teacherActive = computed(
   () => phase.value === 'listen' ||
         phase.value === 'compare' ||
@@ -92,12 +73,8 @@ const youActive = computed(
   () => phase.value === 'play' || phase.value === 'compare'
 )
 
-/* ---------- évaluation des kicks joueur (phase compare) ----------
-   chaque kick prof ne peut être validé qu'UNE fois → score plafonné.
-   on associe à chaque kick prof le hit joueur le plus proche dispo. */
 const scoredHits = computed(() => {
   const targets = teacherPattern.value.map(c => ({ cell: c, taken: false }))
-  // hits triés : on traite les plus proches d'une cible en premier
   return playerHits.value.map(hit => {
     let bestIdx = -1
     let bestDist = Infinity
@@ -109,7 +86,7 @@ const scoredHits = computed(() => {
     let state = 'bad'
     if (bestIdx !== -1 && bestDist <= TOL_WARN) {
       state = bestDist <= TOL_GOOD ? 'good' : 'warn'
-      targets[bestIdx].taken = true   // cible consommée
+      targets[bestIdx].taken = true
     }
     return { ...hit, state }
   })
@@ -119,7 +96,6 @@ const placed = computed(
 )
 const total = computed(() => teacherPattern.value.length)
 
-/* score chiffré : vert = 1 point, jaune = 0,5 point */
 const score = computed(() =>
   scoredHits.value.reduce((sum, h) => {
     if (h.state === 'good') return sum + 1
@@ -127,37 +103,25 @@ const score = computed(() =>
     return sum
   }, 0)
 )
-/* affichage : entier sans décimale inutile (3 / 3.5) */
 const scoreLabel = computed(() => {
   const s = score.value
   return Number.isInteger(s) ? `${s}` : s.toFixed(1)
 })
-/* réussite : score vert si ≥ 70% du total, gris sinon */
 const isScorePass = computed(
   () => total.value > 0 && score.value / total.value >= 0.7
 )
 
-/* ---------- meilleur score par difficulté + mode (en mémoire) ----------
-   non persistant : remis à zéro au rechargement de la page.
-   2 scores par difficulté : 'guided' (repère prof) et 'blind' (à l'aveugle).
-   clé = `${difficulté}-${mode}` ex: 'easy-guided'. */
 const bestScores = ref({})
-
-/* mode du run en cours, figé au lancement (teacherGuide peut bouger après) */
 const playedMode = ref('guided')
 
 function modeOf (guide) { return guide ? 'guided' : 'blind' }
 function bestKey (diff, mode) { return `${diff}-${mode}` }
-
-/* best score d'une difficulté pour un mode donné */
 function bestFor (diff, mode) {
   return bestScores.value[bestKey(diff, mode)] ?? null
 }
 
-/* vrai si le dernier score a battu le record (figé à la fin du run) */
 const isNewBest = ref(false)
 
-/* enregistre le score courant s'il bat le record (difficulté + mode joué) */
 function saveBest () {
   const key = bestKey(difficulty.value, playedMode.value)
   const prev = bestScores.value[key] ?? -1
@@ -166,6 +130,17 @@ function saveBest () {
     bestScores.value = { ...bestScores.value, [key]: score.value }
   }
 }
+
+/* ---------- DÉTECTION DU SON ---------- */
+const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.6,
+  onHit: () => {
+    if (phase.value !== 'play' || !isRunning.value) return
+    playerHits.value.push({ cell: playhead.value })
+    playKick()
+  },
+})
 
 /* ---------- audio ---------- */
 let audioCtx = null
@@ -194,7 +169,7 @@ function playKick () {
   osc.stop(t + 0.2)
 }
 
-/* ---------- boucle de lecture (une seule passe) ---------- */
+/* ---------- boucle ---------- */
 let rafId = null
 let startTime = 0
 let lastCell = -1
@@ -212,7 +187,6 @@ function loop (now) {
 
   if (cell !== lastCell) {
     lastCell = cell
-    // son du prof : en listen toujours, en play seulement si guide ON
     const soundOn = phase.value === 'listen' ||
                     (phase.value === 'play' && teacherGuide.value)
     if (soundOn && teacherPattern.value.includes(cell)) playKick()
@@ -257,14 +231,13 @@ function playCall () {
   startRun()
 }
 
-/* compte à rebours 3·2·1 : géré par le composant <Countdown> */
 const countdownEl = ref(null)
 
 function startYourTurn () {
   playerHits.value = []
-  playedMode.value = modeOf(teacherGuide.value)   // fige le mode du run
+  playedMode.value = modeOf(teacherGuide.value)
   phase.value = 'play'
-  countdownEl.value.start()                       // startRun() sur @done
+  countdownEl.value.start()
 }
 
 function retry () {
@@ -272,7 +245,6 @@ function retry () {
   phase.value = 'listen'
 }
 
-/* changer de difficulté : reset complet de l'exercice */
 function setDifficulty (key) {
   if (difficulty.value === key) return
   cancelAnimationFrame(rafId)
@@ -286,7 +258,12 @@ function setDifficulty (key) {
   phase.value = 'listen'
 }
 
-/* ---------- input joueur : Espace pose un kick au playhead ---------- */
+function skip () {
+  stopMic()
+  router.push('/')
+}
+
+/* espace conservé en debug / fallback */
 function onKeydown (e) {
   if (e.code !== 'Space') return
   e.preventDefault()
@@ -299,14 +276,13 @@ onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(rafId)
+  stopMic()
   if (audioCtx) audioCtx.close()
 })
 
-/* ---------- helpers d'affichage ---------- */
 function cellLeft (cell) {
   return `${(cell / BEATS.value) * 100}%`
 }
-/* kicks joueur : bruts pendant play, notés en compare */
 const displayedHits = computed(() =>
   phase.value === 'compare' ? scoredHits.value
     : playerHits.value.map(h => ({ ...h, state: 'live' }))
@@ -349,11 +325,10 @@ const callLabel = computed(() =>
 
     <!-- stage -->
     <div class="stage">
-      <!-- compte à rebours avant la phase de jeu -->
       <Countdown ref="countdownEl" :from="3" @done="startRun" />
 
       <div class="stage-pad">
-        <!-- mode tabs + difficulté -->
+        <!-- topbar -->
         <div class="e05-topbar">
           <div class="e05-modes">
             <span class="e05-mode" :class="{ active: phase === 'listen' }">1 · Listen</span>
@@ -375,7 +350,6 @@ const callLabel = computed(() =>
                 @click="setDifficulty(key)"
               >
                 {{ p.label }}
-                <!-- best scores au survol : 2 modes -->
                 <span class="e05-diff-tip">
                   <span class="e05-tip-row">
                     <span class="e05-tip-mode">Guided</span>
@@ -409,7 +383,6 @@ const callLabel = computed(() =>
                 class="e05-cell"
                 :class="{ bar: (n - 1) % BAR_DIV === 0 }"
               />
-              <!-- ligne prof masquée si guide coupé pendant play -->
               <template v-if="teacherVisible">
                 <div
                   v-for="cell in teacherPattern"
@@ -457,9 +430,8 @@ const callLabel = computed(() =>
           </div>
         </div>
 
-        <!-- panneau bas selon la phase -->
+        <!-- panneau bas -->
         <div class="e05-panel">
-          <!-- LISTEN -->
           <template v-if="phase === 'listen'">
             <div class="e05-panel-info">
               <span class="mono-label">Step 1 · Listen</span>
@@ -468,7 +440,6 @@ const callLabel = computed(() =>
               </p>
             </div>
             <div class="e05-panel-actions">
-              <!-- réglage guide visuel, dispo avant de jouer -->
               <button
                 type="button"
                 class="e05-guide"
@@ -493,12 +464,11 @@ const callLabel = computed(() =>
             </div>
           </template>
 
-          <!-- PLAY -->
           <template v-else-if="phase === 'play'">
             <div class="e05-panel-info">
               <span class="mono-label">Step 2 · Your turn</span>
               <p class="e05-panel-text">
-                Hit <kbd>Space</kbd> on every kick.
+                Make the <em>{{ currentSound?.name }}</em> sound on every beat.
                 {{ teacherGuide
                     ? 'The teacher line guides you.'
                     : 'Teacher line hidden — trust your ear.' }}
@@ -509,7 +479,6 @@ const callLabel = computed(() =>
             </div>
           </template>
 
-          <!-- COMPARE -->
           <template v-else>
             <div class="e05-panel-info">
               <span class="mono-label">Step 3 · Compare</span>
@@ -552,8 +521,16 @@ const callLabel = computed(() =>
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Skip →</button>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggleMic"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
+        <button class="footer-cta" type="button" @click="skip">Skip →</button>
       </div>
     </footer>
   </div>
@@ -567,7 +544,6 @@ const callLabel = computed(() =>
   background: var(--surface-stage);
 }
 
-/* ===== header (identique Exo02/04) ===== */
 .exo-header {
   display: flex;
   align-items: center;
@@ -593,6 +569,7 @@ const callLabel = computed(() =>
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
+  cursor: pointer;
   transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .exo-back:hover,
@@ -636,7 +613,6 @@ const callLabel = computed(() =>
 .exo-step-dot.done { background: var(--orange-700); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
-/* ===== stage ===== */
 .stage { flex: 1; display: flex; min-height: 0; position: relative; }
 
 .stage-pad {
@@ -660,7 +636,6 @@ const callLabel = computed(() =>
   color: var(--fg-muted);
 }
 
-/* ===== topbar : modes + difficulté ===== */
 .e05-topbar {
   display: flex;
   align-items: center;
@@ -668,7 +643,6 @@ const callLabel = computed(() =>
   gap: 24px;
 }
 
-/* ===== mode tabs ===== */
 .e05-modes { display: flex; align-items: center; gap: 12px; }
 .e05-mode {
   padding: 8px 14px;
@@ -688,7 +662,6 @@ const callLabel = computed(() =>
 }
 .e05-mode-arrow { color: var(--fg-muted); }
 
-/* sélecteur de difficulté */
 .e05-diff {
   display: flex;
   align-items: center;
@@ -721,7 +694,6 @@ const callLabel = computed(() =>
   color: var(--fg-on-orange);
 }
 
-/* tooltip best score (au survol) */
 .e05-diff-tip {
   position: absolute;
   top: calc(100% + 8px);
@@ -753,7 +725,6 @@ const callLabel = computed(() =>
 }
 .e05-tip-mode { color: var(--fg-muted); }
 
-/* ===== timelines ===== */
 .e05-timelines { display: flex; flex-direction: column; gap: 24px; }
 .e05-track { display: flex; flex-direction: column; gap: 8px; }
 
@@ -768,8 +739,6 @@ const callLabel = computed(() =>
 }
 .e05-track-label.active { color: var(--brand); }
 
-/* grille : bordures uniformes 1px partout
-   --cells = nombre de cellules (synchronisé avec BEATS côté JS) */
 .e05-grid {
   position: relative;
   display: flex;
@@ -785,7 +754,6 @@ const callLabel = computed(() =>
 .e05-cell:last-child { border-right: none; }
 .e05-cell.bar { border-right-color: var(--ink-4); }
 
-/* kick : cube compact, centré dans sa cellule */
 .e05-kick {
   position: absolute;
   top: 50%;
@@ -802,7 +770,6 @@ const callLabel = computed(() =>
 .e05-kick.warn { background: var(--state-warn); }
 .e05-kick.bad  { background: var(--state-bad); }
 
-/* message ligne prof masquée */
 .e05-track-hidden {
   position: absolute;
   inset: 0;
@@ -816,7 +783,6 @@ const callLabel = computed(() =>
   color: var(--fg-disabled);
 }
 
-/* curseur de lecture */
 .e05-playhead {
   position: absolute;
   top: 0;
@@ -826,7 +792,6 @@ const callLabel = computed(() =>
   box-shadow: 0 0 8px 0 var(--brand);
 }
 
-/* ===== panneau bas ===== */
 .e05-panel {
   display: flex;
   align-items: center;
@@ -843,6 +808,7 @@ const callLabel = computed(() =>
   font-size: 14px;
   color: var(--fg-secondary);
 }
+.e05-panel-text em { font-style: normal; color: var(--brand); }
 .e05-panel-text kbd {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -879,7 +845,6 @@ const callLabel = computed(() =>
 }
 .e05-new-best { color: var(--brand); }
 
-/* indicateur d'enregistrement */
 .e05-live {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -893,7 +858,6 @@ const callLabel = computed(() =>
   50%      { opacity: 0.4; }
 }
 
-/* toggle guide visuel */
 .e05-guide {
   display: inline-flex;
   align-items: center;
@@ -921,7 +885,6 @@ const callLabel = computed(() =>
 .e05-guide.off { color: var(--fg-muted); }
 .e05-guide.off .e05-guide-dot { background: var(--ink-6); }
 
-/* ===== footer (identique Exo02/04) ===== */
 .exo-footer {
   display: flex;
   align-items: center;
@@ -931,10 +894,13 @@ const callLabel = computed(() =>
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
+
+/* mic devient un bouton toggle */
 .footer-mic {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 4px;
@@ -942,15 +908,25 @@ const callLabel = computed(() =>
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .footer-mic .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active { color: var(--fg-primary); border-color: var(--state-good); }
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 .footer-cta {
   display: inline-flex;
   align-items: center;
@@ -964,6 +940,7 @@ const callLabel = computed(() =>
   font-size: 16px;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
+  cursor: pointer;
   transition: background-color var(--dur-fast);
 }
 .footer-cta:hover { background: var(--brand-hover); }
