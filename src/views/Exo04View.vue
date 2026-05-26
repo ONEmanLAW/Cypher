@@ -2,16 +2,18 @@
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+import { ref, computed, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
 const currentSound = computed(() => progress.currentSound)
+const targetLabel = computed(() => currentSound.value?.label)
 
 /* ============================================================
    EXO 04 · MÉTRONOME — 8 temps orbital
-   - le joueur tape Espace sur chaque temps (1..7, le 0 est neutre)
-   - chaque appui : good (vert) / warn (jaune) / bad (rouge)
+   - le joueur fait le SON sur chaque temps (1..7, le 0 est neutre)
+   - chaque hit : good (vert) / warn (jaune) / bad (rouge)
    - tour validé si tolérance respectée → streak +1, sinon reset
    - 8 tours puis arrêt auto → note /8
    ============================================================ */
@@ -23,21 +25,15 @@ const CY = SIZE / 2
 const RADIUS = 230
 const circumference = 2 * Math.PI * RADIUS
 
-const TOTAL_LOOPS = 8           // nombre de tours d'une session
-const ACTIVE_BEATS = BEATS - 1  // 7 temps notés (le temps 0 est neutre)
+const TOTAL_LOOPS = 8
+const ACTIVE_BEATS = BEATS - 1
 
-/* fenêtres de précision (en degrés autour du repère).
-   1 temps = 45°. parfait = vert, à peu près = jaune, au-delà = rouge. */
 const PERFECT_DEG = 12
 const OK_DEG = 24
 
-/* tolérance d'un tour */
-const MAX_WARN = 2              // jaunes tolérés
-const MAX_BAD = 1               // rouges tolérés
-/* règle : tour validé si bad ≤ MAX_BAD ET warn ≤ MAX_WARN
-   ET pas (bad ≥ 1 ET warn ≥ 2) → 1 rouge + 2 jaunes = streak cassé */
+const MAX_WARN = 2
+const MAX_BAD = 1
 
-/* coord polaire : 0° = midi, sens horaire */
 function polar (deg, r = RADIUS) {
   const rad = ((deg - 90) * Math.PI) / 180
   return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) }
@@ -60,22 +56,17 @@ const countdownEl = ref(null)
 /* ---------- état de jeu ---------- */
 const streak = ref(0)
 const streakGoal = 8
-const history = ref([])             // ['good'|'bad', ...] max TOTAL_LOOPS
-const loopCount = ref(0)            // tours terminés
-const sessionDone = ref(false)      // true quand les 8 tours sont faits
-
-/* meilleur score en mémoire (non persistant) */
+const history = ref([])
+const loopCount = ref(0)
+const sessionDone = ref(false)
 const bestScore = ref(null)
 
-/* 8 repères : 'idle' au départ, puis good/warn/bad.
-   index 0 (nord) reste toujours 'idle'. */
 const tickStates = ref(Array(BEATS).fill('idle'))
 const ticks = computed(() =>
   tickStates.value.map((state, i) => ({ state, pos: polar((360 / BEATS) * i) }))
 )
 
-/* statut central : feedback du dernier tour */
-const statusKind = ref('idle')      // good | bad | idle
+const statusKind = ref('idle')
 const statusText = ref('')
 
 /* ---------- timing ---------- */
@@ -83,7 +74,16 @@ const beatMs = computed(() => 60000 / bpm.value)
 const loopMs = computed(() => beatMs.value * BEATS)
 const trailLen = computed(() => (trailAngle.value / 360) * circumference)
 
-/* ---------- audio ---------- */
+/* ---------- DÉTECTION DU SON ---------- */
+const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.6,
+  onHit: () => {
+    if (running.value) registerHit()
+  },
+})
+
+/* ---------- audio (métronome + kick local) ---------- */
 let audioCtx = null
 
 function ensureCtx () {
@@ -110,7 +110,6 @@ function playTick (accent = false) {
   osc.stop(t + 0.06)
 }
 
-/* kick joueur, plus grave */
 function playKick () {
   const ctx = ensureCtx()
   const t = ctx.currentTime
@@ -130,12 +129,11 @@ function playKick () {
 /* ---------- évaluation d'un tour ---------- */
 function loopIsValid (bad, warn) {
   if (bad > MAX_BAD || warn > MAX_WARN) return false
-  if (bad >= 1 && warn >= 2) return false   // 1 rouge + 2 jaunes = cassé
+  if (bad >= 1 && warn >= 2) return false
   return true
 }
 
 function finishLoop () {
-  // repères jamais touchés (1..7) → rouge
   for (let i = 1; i < BEATS; i++) {
     if (tickStates.value[i] === 'idle') tickStates.value[i] = 'bad'
   }
@@ -158,7 +156,6 @@ function resetTicks () {
   tickStates.value = Array(BEATS).fill('idle')
 }
 
-/* fin de session : 8 tours faits → arrêt + note */
 function finishSession () {
   const score = history.value.filter(h => h === 'good').length
   if (bestScore.value === null || score > bestScore.value) {
@@ -182,7 +179,6 @@ function loop (now) {
   const beatIndex = Math.floor(elapsed / beatMs.value)
 
   if (beatIndex !== lastBeat) {
-    // retour au temps 0 = un tour vient de se terminer
     if (beatIndex < lastBeat) {
       finishLoop()
       if (loopCount.value >= TOTAL_LOOPS) {
@@ -224,29 +220,31 @@ function stopLoop () {
   cursorPos.value = polar(0)
 }
 
-/* ---------- input joueur ---------- */
-function onKeydown (e) {
-  if (e.code !== 'Space') return
-  e.preventDefault()
-  if (!running.value) return
-
+/* ---------- HIT (déclenché par le son OU la barre espace en debug) ---------- */
+function registerHit () {
   playKick()
   const cursorDeg = trailAngle.value
 
-  // repère le plus proche parmi les temps notés (1..7)
   let bestIdx = -1
   let bestDist = Infinity
   for (let i = 1; i < BEATS; i++) {
     const d = angleDiff(cursorDeg, (360 / BEATS) * i)
     if (d < bestDist) { bestDist = d; bestIdx = i }
   }
-  // un repère ne se note qu'une fois
   if (bestIdx !== -1 && tickStates.value[bestIdx] === 'idle') {
     let state = 'bad'
     if (bestDist <= PERFECT_DEG) state = 'good'
     else if (bestDist <= OK_DEG) state = 'warn'
     tickStates.value[bestIdx] = state
   }
+}
+
+/* espace conservé pour debug / fallback */
+function onKeydown (e) {
+  if (e.code !== 'Space') return
+  e.preventDefault()
+  if (!running.value) return
+  registerHit()
 }
 
 /* ---------- contrôles ---------- */
@@ -269,10 +267,16 @@ function changeBpm (delta) {
   bpm.value = Math.min(180, Math.max(60, bpm.value + delta))
 }
 
+function skip () {
+  stopMic()
+  router.push('/')
+}
+
 window.addEventListener('keydown', onKeydown)
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(rafId)
+  stopMic()
   if (audioCtx) audioCtx.close()
 })
 </script>
@@ -310,7 +314,6 @@ onBeforeUnmount(() => {
 
     <!-- stage -->
     <div class="stage">
-      <!-- compte à rebours avant le métronome -->
       <Countdown ref="countdownEl" :from="3" @done="onCountdownDone" />
 
       <div class="stage-pad">
@@ -331,7 +334,6 @@ onBeforeUnmount(() => {
                       class="e04-trail" />
             </svg>
 
-            <!-- 8 repères -->
             <div
               v-for="(tick, i) in ticks"
               :key="i"
@@ -339,13 +341,11 @@ onBeforeUnmount(() => {
               :style="{ left: tick.pos.x + 'px', top: tick.pos.y + 'px' }"
             />
 
-            <!-- curseur carré orange -->
             <div
               class="e04-cursor"
               :style="{ left: cursorPos.x + 'px', top: cursorPos.y + 'px' }"
             />
 
-            <!-- centre -->
             <div class="e04-center">
               <div class="e04-bpm">{{ bpm }}</div>
               <div class="mono-label">BPM</div>
@@ -355,7 +355,6 @@ onBeforeUnmount(() => {
 
           <!-- panneau latéral -->
           <div class="e04-side">
-            <!-- streak (tooltip best score au hover) -->
             <div class="e04-block">
               <span class="mono-label">
                 Streak · {{ loopCount }} / {{ TOTAL_LOOPS }} loops
@@ -378,7 +377,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <!-- historique -->
             <div class="e04-block e04-history">
               <span class="mono-label">
                 History · last {{ TOTAL_LOOPS }} loops
@@ -392,7 +390,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <!-- tempo : BPM affiché sous la valeur -->
             <div class="e04-block">
               <span class="mono-label">Tempo</span>
               <div class="e04-tempo">
@@ -407,7 +404,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <!-- transport -->
             <button
               :class="['e04-transport', { running }]"
               type="button"
@@ -430,8 +426,16 @@ onBeforeUnmount(() => {
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Skip →</button>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggleMic"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
+        <button class="footer-cta" type="button" @click="skip">Skip →</button>
       </div>
     </footer>
   </div>
@@ -445,7 +449,7 @@ onBeforeUnmount(() => {
   background: var(--surface-stage);
 }
 
-/* ===== header (identique Exo02) ===== */
+/* ===== header ===== */
 .exo-header {
   display: flex;
   align-items: center;
@@ -471,6 +475,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
+  cursor: pointer;
   transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .exo-back:hover,
@@ -537,7 +542,6 @@ onBeforeUnmount(() => {
 .e04-orbit-svg { position: absolute; inset: 0; pointer-events: none; }
 .e04-trail { filter: drop-shadow(0 0 6px rgba(255, 107, 26, 0.5)); }
 
-/* repère de temps */
 .e04-tick {
   position: absolute;
   width: 18px;
@@ -560,7 +564,6 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glow);
 }
 
-/* curseur carré orange */
 .e04-cursor {
   position: absolute;
   width: 26px;
@@ -571,7 +574,6 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glow);
 }
 
-/* centre */
 .e04-center {
   position: absolute;
   inset: 0;
@@ -623,7 +625,6 @@ onBeforeUnmount(() => {
   color: var(--fg-muted);
 }
 
-/* streak */
 .e04-streak { display: flex; align-items: center; gap: 24px; }
 .e04-streak-num {
   font-family: var(--font-display);
@@ -641,7 +642,6 @@ onBeforeUnmount(() => {
 }
 .e04-streak-msg strong { color: var(--fg-primary); }
 
-/* tooltip best score (au survol du streak) */
 .e04-has-tip { position: relative; cursor: default; }
 .e04-tip {
   position: absolute;
@@ -673,7 +673,6 @@ onBeforeUnmount(() => {
 }
 .e04-tip-label { color: var(--fg-muted); }
 
-/* historique */
 .e04-history {
   padding: 16px;
   background: var(--surface-card);
@@ -693,7 +692,6 @@ onBeforeUnmount(() => {
 .e04-hdot.bad  { background: var(--state-bad);  border-color: var(--state-bad); }
 .e04-hdot.empty { background: transparent; }
 
-/* tempo */
 .e04-tempo {
   display: flex;
   align-items: center;
@@ -703,7 +701,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: 4px;
 }
-/* BPM affiché en colonne : valeur au-dessus, "bpm" en dessous */
 .e04-tempo-display {
   flex: 1;
   display: flex;
@@ -732,12 +729,12 @@ onBeforeUnmount(() => {
   color: var(--fg-primary);
   border: 1px solid var(--line);
   border-radius: 4px;
+  cursor: pointer;
   transition: border-color var(--dur-fast);
 }
 .e04-tempo-btn:hover:not(:disabled) { border-color: var(--brand); }
 .e04-tempo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* transport */
 .e04-transport {
   font-family: var(--font-display);
   font-size: var(--t-h3);
@@ -748,12 +745,13 @@ onBeforeUnmount(() => {
   color: var(--fg-on-orange);
   border: 2px solid var(--brand);
   border-radius: 4px;
+  cursor: pointer;
   transition: background-color var(--dur-fast);
 }
 .e04-transport:hover { background: var(--brand-hover); }
 .e04-transport.running { background: var(--ink-3); color: var(--fg-primary); }
 
-/* ===== footer (identique Exo02) ===== */
+/* ===== footer ===== */
 .exo-footer {
   display: flex;
   align-items: center;
@@ -763,10 +761,13 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
+
+/* mic devient un bouton toggle */
 .footer-mic {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 4px;
@@ -774,15 +775,25 @@ onBeforeUnmount(() => {
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .footer-mic .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active { color: var(--fg-primary); border-color: var(--state-good); }
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 .footer-cta {
   display: inline-flex;
   align-items: center;
@@ -796,6 +807,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
+  cursor: pointer;
   transition: background-color var(--dur-fast);
 }
 .footer-cta:hover { background: var(--brand-hover); }
