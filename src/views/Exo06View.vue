@@ -4,11 +4,13 @@ import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useExoNavigation } from '@/composables/useExoNavigation'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 
 const router = useRouter()
 const progress = useProgressStore()
 const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
+const targetLabel = computed(() => currentSound.value?.label)
 
 /* ============================================================
    EXO 06 · FILL THE BEAT — radial 8-step clock
@@ -137,6 +139,15 @@ let loopHitsBad = 0
 const hitTargets = new Set()
 
 const countdownEl = ref(null)
+
+/* ---------- DÉTECTION DU SON ---------- */
+const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.6,
+  onHit: () => {
+    if (status.value === 'running') registerHit()
+  },
+})
 
 function crossSlot(i) {
   const s = slots.value[i]
@@ -336,6 +347,7 @@ function registerHit() {
   }
 }
 
+/* espace conservé en debug / fallback */
 function onKey(e) {
   if (e.code !== 'Space') return
   e.preventDefault()
@@ -354,6 +366,7 @@ function setDifficulty(key) {
 
 function skip() {
   cancelAnimationFrame(rafId)
+  stopMic()
   if (audioCtx) {
     audioCtx.close()
     audioCtx = null
@@ -368,6 +381,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   cancelAnimationFrame(rafId)
+  stopMic()
   if (audioCtx) audioCtx.close()
 })
 </script>
@@ -568,7 +582,15 @@ onUnmounted(() => {
         <button class="footer-btn" type="button">ⓘ Tips</button>
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic"><span class="dot" /> Mic on</span>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggleMic"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
         <button class="footer-cta" type="button" @click="skip">Skip →</button>
       </div>
     </footer>
@@ -608,6 +630,7 @@ onUnmounted(() => {
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
+  cursor: pointer;
   transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .exo-back:hover,
@@ -651,13 +674,19 @@ onUnmounted(() => {
 .exo-step-dot.done { background: var(--orange-700); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
+/* ===== STAGE centré ===== */
 .stage { flex: 1; display: flex; min-height: 0; position: relative; }
+
 .e06-stage {
   flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 64px;
   padding: 32px 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .e06-clock-wrap {
@@ -775,11 +804,11 @@ onUnmounted(() => {
 }
 
 .e06-side {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 420px;
+  width: 420px;
+  flex-shrink: 0;
 }
 
 .e06-block { display: flex; flex-direction: column; gap: 12px; }
@@ -865,6 +894,7 @@ onUnmounted(() => {
   border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 12px;
+  cursor: pointer;
   transition: border-color var(--dur-fast), color var(--dur-fast), background-color var(--dur-fast);
 }
 .chip:hover { border-color: var(--line-strong); color: var(--fg-primary); }
@@ -969,10 +999,13 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
+
+/* mic devient un bouton toggle */
 .footer-mic {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 4px;
@@ -980,15 +1013,25 @@ onUnmounted(() => {
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .footer-mic .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active { color: var(--fg-primary); border-color: var(--state-good); }
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 .footer-cta {
   display: inline-flex;
   align-items: center;
@@ -1002,6 +1045,7 @@ onUnmounted(() => {
   font-size: 16px;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
+  cursor: pointer;
   transition: background-color var(--dur-fast);
 }
 .footer-cta:hover { background: var(--brand-hover); }
