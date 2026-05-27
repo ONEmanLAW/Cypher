@@ -3,9 +3,11 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 
 /* ============================================================
@@ -53,7 +55,6 @@ const slots = computed(() => {
 
 const SLOT_FREQ = { HH: 7200, SN: 320, YOU: 110 }
 
-/* ---- geometry --------------------------------------------------------- */
 const slotAngle = (i) => (i / SLOT_COUNT) * 360
 const polar = (i, r = SLOT_RADIUS) => {
   const rad = (slotAngle(i) - 90) * Math.PI / 180
@@ -78,7 +79,6 @@ const slotStyle = (i) => {
   return { transform: `translate(${p.x - 44}px, ${p.y - 44}px)` }
 }
 
-/* ---- Web Audio -------------------------------------------------------- */
 let audioCtx = null
 function ensureCtx() {
   if (!audioCtx) {
@@ -102,9 +102,8 @@ function playClick(freq = 440, dur = 0.06, type = 'square') {
   osc.stop(t + dur + 0.02)
 }
 
-/* ---- état ------------------------------------------------------------- */
 const mode = ref('pause')
-const status = ref('idle')        // 'idle' | 'countdown' | 'running' | 'done'
+const status = ref('idle')
 const angle = ref(0)
 const waiting = ref(false)
 const litSlot = ref(null)
@@ -112,7 +111,6 @@ const history = ref([])
 const loopCount = ref(0)
 const streak = ref(0)
 
-/* feedback central (style Exo04) */
 const statusKind = ref('idle')
 const statusText = ref('')
 
@@ -129,7 +127,6 @@ const playedMode = ref('pause')
 
 const completedDiffs = ref(new Set())
 
-/* ---- refs non réactives ---------------------------------------------- */
 let rafId = 0
 let lastTs = 0
 let angleVal = 0
@@ -141,7 +138,6 @@ const hitTargets = new Set()
 
 const countdownEl = ref(null)
 
-/* ---- helpers ---------------------------------------------------------- */
 function crossSlot(i) {
   const s = slots.value[i]
   litSlot.value = i
@@ -164,7 +160,6 @@ function clearSlotFeedback() {
   for (const k of Object.keys(slotFeedback)) delete slotFeedback[k]
 }
 
-/* ---- session ---------------------------------------------------------- */
 function resetSession() {
   history.value = []
   loopCount.value = 0
@@ -228,7 +223,6 @@ function finishSession() {
   }
 }
 
-/* ---- animation loop --------------------------------------------------- */
 function tick(ts) {
   if (!lastTs) lastTs = ts
   const dt = ts - lastTs
@@ -271,7 +265,6 @@ function tick(ts) {
   rafId = requestAnimationFrame(tick)
 }
 
-/* ---- start / countdown ----------------------------------------------- */
 function startCountdown() {
   if (status.value === 'running' || status.value === 'countdown') return
   resetSession()
@@ -302,7 +295,6 @@ function stopSession() {
   if (countdownEl.value?.cancel) countdownEl.value.cancel()
 }
 
-/* ---- hit -------------------------------------------------------------- */
 function registerHit() {
   if (status.value !== 'running') return
 
@@ -344,7 +336,6 @@ function registerHit() {
   }
 }
 
-/* ---- keys ------------------------------------------------------------- */
 function onKey(e) {
   if (e.code !== 'Space') return
   e.preventDefault()
@@ -352,7 +343,6 @@ function onKey(e) {
   else registerHit()
 }
 
-/* ---- difficulty switch ----------------------------------------------- */
 function setDifficulty(key) {
   if (difficulty.value === key) return
   difficulty.value = key
@@ -362,7 +352,15 @@ function setDifficulty(key) {
   resetSession()
 }
 
-/* ---- lifecycle -------------------------------------------------------- */
+function skip() {
+  cancelAnimationFrame(rafId)
+  if (audioCtx) {
+    audioCtx.close()
+    audioCtx = null
+  }
+  goToNext()
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   rafId = requestAnimationFrame(tick)
@@ -376,7 +374,7 @@ onUnmounted(() => {
 
 <template>
   <div class="exo">
-    <!-- header : step 6/6 -->
+    <!-- header -->
     <header class="exo-header">
       <div class="exo-header-side">
         <button class="exo-back" type="button" @click="router.push('/exercises')">
@@ -435,7 +433,6 @@ onUnmounted(() => {
               <div class="e06-slot-inner">{{ s.label }}</div>
             </div>
 
-            <!-- centre : badge status, masqué pendant countdown + tant qu'aucun feedback -->
             <div class="e06-clock-center">
               <div v-if="status === 'running' && waiting" class="e06-clock-step">
                 your turn
@@ -459,7 +456,6 @@ onUnmounted(() => {
 
         <!-- side -->
         <div class="e06-side">
-          <!-- difficulté -->
           <div class="e06-block">
             <span class="mono-label">Difficulty</span>
             <div class="e06-diff-btns">
@@ -491,7 +487,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- mode -->
           <div class="e06-block">
             <span class="mono-label">Mode</span>
             <div class="chip-row">
@@ -510,7 +505,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- streak -->
           <div class="e06-block">
             <span class="mono-label">
               Streak · {{ loopCount }} / {{ TOTAL_LOOPS }} loops
@@ -534,7 +528,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- historique -->
           <div class="e06-block e06-history">
             <span class="mono-label">
               History · last {{ HISTORY_MAX }} loops
@@ -548,7 +541,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- play / restart / stop : pleine largeur, même slot -->
           <button
             v-if="status === 'idle'"
             class="e06-play" type="button" @click="startCountdown">
@@ -577,7 +569,7 @@ onUnmounted(() => {
       </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
-        <button class="footer-cta" type="button">Skip →</button>
+        <button class="footer-cta" type="button" @click="skip">Skip →</button>
       </div>
     </footer>
   </div>
@@ -591,7 +583,6 @@ onUnmounted(() => {
   background: var(--surface-stage);
 }
 
-/* ---- header ---- */
 .exo-header {
   display: flex;
   align-items: center;
@@ -660,7 +651,6 @@ onUnmounted(() => {
 .exo-step-dot.done { background: var(--orange-700); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
-/* ---- stage ---- */
 .stage { flex: 1; display: flex; min-height: 0; position: relative; }
 .e06-stage {
   flex: 1;
@@ -670,7 +660,6 @@ onUnmounted(() => {
   padding: 32px 64px;
 }
 
-/* ---- clock ---- */
 .e06-clock-wrap {
   flex-shrink: 0;
   display: flex;
@@ -724,7 +713,6 @@ onUnmounted(() => {
   color: var(--fg-on-orange);
 }
 
-/* feedback instantané sur slot */
 .e06-slot.fb-good .e06-slot-inner {
   border-color: var(--state-good);
   color: var(--state-good);
@@ -741,7 +729,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 4px rgba(255, 77, 77, 0.25);
 }
 
-/* centre */
 .e06-clock-center {
   position: absolute;
   inset: 0;
@@ -760,7 +747,6 @@ onUnmounted(() => {
   color: var(--brand);
 }
 
-/* badge status */
 .e06-status {
   padding: 8px 12px;
   border-radius: 2px;
@@ -777,7 +763,6 @@ onUnmounted(() => {
 .e06-status.bad  { background: var(--state-bad); }
 .e06-status.idle { background: var(--ink-3); color: var(--fg-muted); }
 
-/* playhead */
 .e06-cursor-line {
   position: absolute;
   left: 50%;
@@ -789,7 +774,6 @@ onUnmounted(() => {
   margin-left: -1.5px;
 }
 
-/* ---- side ---- */
 .e06-side {
   flex: 1;
   display: flex;
@@ -808,7 +792,6 @@ onUnmounted(() => {
   color: var(--fg-muted);
 }
 
-/* difficulté */
 .e06-diff-btns {
   display: flex;
   border: 1px solid var(--line);
@@ -873,7 +856,6 @@ onUnmounted(() => {
 .e06-tip-row { display: flex; justify-content: space-between; gap: 16px; }
 .e06-tip-mode { color: var(--fg-muted); }
 
-/* chips mode */
 .chip-row { display: flex; gap: 8px; }
 .chip {
   background: transparent;
@@ -892,7 +874,6 @@ onUnmounted(() => {
   border-color: var(--brand);
 }
 
-/* streak */
 .e06-streak { display: flex; align-items: center; gap: 24px; }
 .e06-streak-num {
   font-family: var(--font-display);
@@ -911,7 +892,6 @@ onUnmounted(() => {
 .e06-streak-msg strong { color: var(--fg-primary); }
 .e06-new-best { color: var(--brand); font-weight: 500; }
 
-/* historique */
 .e06-history {
   padding: 16px;
   background: var(--surface-card);
@@ -931,7 +911,6 @@ onUnmounted(() => {
 .e06-hdot.bad  { background: var(--state-bad);  border-color: var(--state-bad); }
 .e06-hdot.empty { background: transparent; }
 
-/* play / restart pleine largeur */
 .e06-play {
   align-self: stretch;
   width: 100%;
@@ -981,7 +960,6 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
-/* ---- footer ---- */
 .exo-footer {
   display: flex;
   align-items: center;

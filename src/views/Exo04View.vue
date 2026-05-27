@@ -3,19 +3,17 @@ import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 import { ref, computed, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 const targetLabel = computed(() => currentSound.value?.label)
 
 /* ============================================================
    EXO 04 · MÉTRONOME — 8 temps orbital
-   - le joueur fait le SON sur chaque temps (1..7, le 0 est neutre)
-   - chaque hit : good (vert) / warn (jaune) / bad (rouge)
-   - tour validé si tolérance respectée → streak +1, sinon reset
-   - 8 tours puis arrêt auto → note /8
    ============================================================ */
 
 const BEATS = 8
@@ -50,10 +48,8 @@ const currentBeat = ref(-1)
 const cursorPos = ref(polar(0))
 const trailAngle = ref(0)
 
-/* ---------- countdown ---------- */
 const countdownEl = ref(null)
 
-/* ---------- état de jeu ---------- */
 const streak = ref(0)
 const streakGoal = 8
 const history = ref([])
@@ -69,12 +65,10 @@ const ticks = computed(() =>
 const statusKind = ref('idle')
 const statusText = ref('')
 
-/* ---------- timing ---------- */
 const beatMs = computed(() => 60000 / bpm.value)
 const loopMs = computed(() => beatMs.value * BEATS)
 const trailLen = computed(() => (trailAngle.value / 360) * circumference)
 
-/* ---------- DÉTECTION DU SON ---------- */
 const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   targetLabel,
   threshold: 0.6,
@@ -83,7 +77,6 @@ const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   },
 })
 
-/* ---------- audio (métronome + kick local) ---------- */
 let audioCtx = null
 
 function ensureCtx () {
@@ -126,7 +119,6 @@ function playKick () {
   osc.stop(t + 0.17)
 }
 
-/* ---------- évaluation d'un tour ---------- */
 function loopIsValid (bad, warn) {
   if (bad > MAX_BAD || warn > MAX_WARN) return false
   if (bad >= 1 && warn >= 2) return false
@@ -169,7 +161,6 @@ function finishSession () {
   progress.markDone('04')
 }
 
-/* ---------- boucle d'animation ---------- */
 let rafId = null
 let startTime = 0
 let lastBeat = -1
@@ -220,7 +211,6 @@ function stopLoop () {
   cursorPos.value = polar(0)
 }
 
-/* ---------- HIT (déclenché par le son OU la barre espace en debug) ---------- */
 function registerHit () {
   playKick()
   const cursorDeg = trailAngle.value
@@ -239,7 +229,6 @@ function registerHit () {
   }
 }
 
-/* espace conservé pour debug / fallback */
 function onKeydown (e) {
   if (e.code !== 'Space') return
   e.preventDefault()
@@ -247,7 +236,6 @@ function onKeydown (e) {
   registerHit()
 }
 
-/* ---------- contrôles ---------- */
 function toggleRun () {
   ensureCtx()
   if (running.value) {
@@ -269,7 +257,7 @@ function changeBpm (delta) {
 
 function skip () {
   stopMic()
-  router.push('/')
+  goToNext()
 }
 
 window.addEventListener('keydown', onKeydown)
@@ -449,7 +437,6 @@ onBeforeUnmount(() => {
   background: var(--surface-stage);
 }
 
-/* ===== header ===== */
 .exo-header {
   display: flex;
   align-items: center;
@@ -519,7 +506,6 @@ onBeforeUnmount(() => {
 .exo-step-dot.done { background: var(--orange-700); }
 .exo-step-dot.curr { background: var(--orange-500); }
 
-/* ===== stage ===== */
 .stage { flex: 1; display: flex; min-height: 0; position: relative; }
 .stage-pad {
   flex: 1;
@@ -537,7 +523,6 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-/* ===== orbite ===== */
 .e04-orbit { position: relative; width: 520px; height: 520px; }
 .e04-orbit-svg { position: absolute; inset: 0; pointer-events: none; }
 .e04-trail { filter: drop-shadow(0 0 6px rgba(255, 107, 26, 0.5)); }
@@ -607,7 +592,6 @@ onBeforeUnmount(() => {
 .e04-status.bad  { background: var(--state-bad); }
 .e04-status.idle { background: var(--ink-3); color: var(--fg-muted); }
 
-/* ===== panneau latéral ===== */
 .e04-side {
   display: flex;
   flex-direction: column;
@@ -751,7 +735,6 @@ onBeforeUnmount(() => {
 .e04-transport:hover { background: var(--brand-hover); }
 .e04-transport.running { background: var(--ink-3); color: var(--fg-primary); }
 
-/* ===== footer ===== */
 .exo-footer {
   display: flex;
   align-items: center;
@@ -762,7 +745,6 @@ onBeforeUnmount(() => {
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
 
-/* mic devient un bouton toggle */
 .footer-mic {
   display: inline-flex;
   align-items: center;

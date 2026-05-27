@@ -3,10 +3,12 @@ import { useRouter } from 'vue-router'
 import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+import { useExoNavigation } from '@/composables/useExoNavigation'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 const targetLabel = computed(() => currentSound.value?.label)
 
@@ -14,8 +16,6 @@ const completedDiffs = ref(new Set())
 
 /* ============================================================
    EXO 05 · RHYTHM COPY — call / response
-   Le joueur fait le SON (kick / hihat / snare selon le son choisi)
-   au lieu d'appuyer sur Espace.
    ============================================================ */
 
 const BAR_DIV = 4
@@ -131,7 +131,6 @@ function saveBest () {
   }
 }
 
-/* ---------- DÉTECTION DU SON ---------- */
 const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   targetLabel,
   threshold: 0.6,
@@ -142,7 +141,6 @@ const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   },
 })
 
-/* ---------- audio ---------- */
 let audioCtx = null
 
 function ensureCtx () {
@@ -169,7 +167,6 @@ function playKick () {
   osc.stop(t + 0.2)
 }
 
-/* ---------- boucle ---------- */
 let rafId = null
 let startTime = 0
 let lastCell = -1
@@ -225,7 +222,6 @@ function finishRun () {
   }
 }
 
-/* ---------- actions ---------- */
 function playCall () {
   phase.value = 'listen'
   startRun()
@@ -260,10 +256,9 @@ function setDifficulty (key) {
 
 function skip () {
   stopMic()
-  router.push('/')
+  goToNext()
 }
 
-/* espace conservé en debug / fallback */
 function onKeydown (e) {
   if (e.code !== 'Space') return
   e.preventDefault()
@@ -895,7 +890,6 @@ const callLabel = computed(() =>
 }
 .exo-footer-actions { display: flex; gap: 8px; align-items: center; }
 
-/* mic devient un bouton toggle */
 .footer-mic {
   display: inline-flex;
   align-items: center;
