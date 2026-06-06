@@ -34,7 +34,7 @@ function selectSound(sound) {
 }
 
 function goBack() {
-  router.back()
+  router.back('/')
 }
 </script>
 
