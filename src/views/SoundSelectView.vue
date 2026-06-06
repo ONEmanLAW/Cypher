@@ -1,3 +1,4 @@
+<!-- views/SoundSelectView.vue -->
 <script setup>
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -5,6 +6,8 @@ import { useProgressStore, SOUNDS } from '@/stores/progress'
 
 const router = useRouter()
 const progress = useProgressStore()
+
+const currentSection = computed(() => progress.currentSection)
 
 const sounds = computed(() =>
   SOUNDS.map((s) => ({
@@ -50,6 +53,10 @@ function goBack() {
           </svg>
           <span>Back</span>
         </button>
+
+        <span v-if="currentSection" class="nav-section">
+          Section · <em>{{ currentSection.name }}</em>
+        </span>
       </div>
 
       <RouterLink to="/" class="nav-logo">
@@ -182,6 +189,15 @@ function goBack() {
   transition: border-color 0.14s ease, color 0.14s ease;
 }
 .nav-back:hover { border-color: var(--brand); color: var(--brand); }
+
+.nav-section {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.nav-section em { font-style: normal; color: var(--brand); }
 
 .nav-logo {
   display: flex;
