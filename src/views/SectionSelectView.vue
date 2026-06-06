@@ -8,16 +8,16 @@ const progress = useProgressStore()
 
 const sections = computed(() =>
   SECTIONS.map((s) => {
-    const mastered = progress.sectionDoneCount(s.id) // sons maîtrisés
+    const masteredSounds = progress.sectionDoneCount(s.id)
+    const startedExos = s.soundIds.reduce((n, id) => n + progress.doneCountFor(id), 0)
     const clickable = s.soundIds.length > 0
-    const isDone = s.soundCount > 0 && mastered === s.soundCount
 
     let state
-    if (isDone) state = 'done'
-    else if (clickable) state = 'current' // jouable, en cours
-    else state = 'open'                   // ouverte, sons à venir
+    if (s.soundCount > 0 && masteredSounds === s.soundCount) state = 'done' // terminé → sombre
+    else if (startedExos > 0) state = 'current'                             // commencé → orange
+    else state = 'avail'                                                    // non touché → blanc
 
-    return { ...s, state, clickable, done: mastered, total: s.soundCount }
+    return { ...s, state, clickable, done: masteredSounds, total: s.soundCount }
   })
 )
 
@@ -27,7 +27,7 @@ const totalCount = SECTIONS.length
 const STATE_PILL = {
   done:    'Done',
   current: 'In progress',
-  open:    'In progress',
+  avail:   'Available',
 }
 
 function selectSection(s) {
@@ -312,10 +312,10 @@ function goBack() {
 }
 .card:disabled { cursor: not-allowed; }
 
-.card.open {
-  background: var(--ink-3);
-  color: var(--fg-primary);
-  border-color: var(--line);
+.card.avail {
+  background: var(--bone-2);
+  color: var(--ink-1);
+  border-color: var(--bone-4);
 }
 .card.done {
   background: var(--ink-2);
@@ -357,15 +357,18 @@ function goBack() {
   background: currentColor;
 }
 .pill.done,
-.pill.current,
-.pill.open {
+.pill.current {
   background: var(--ink-0);
   color: var(--fg-primary);
   border-color: var(--ink-0);
 }
 .pill.done .pill-dot    { background: var(--state-good); }
 .pill.current .pill-dot { background: var(--brand); }
-.pill.open .pill-dot    { background: var(--ink-6); }
+.pill.avail {
+  background: transparent;
+  color: var(--ink-1);
+  border-color: var(--ink-1);
+}
 
 /* ============ NUM ============ */
 .card-num {
@@ -457,7 +460,7 @@ function goBack() {
     0 0 0 3px rgba(0,0,0,0.6);
 }
 
-/* === Variante orange (section courante) === */
+/* === Variante orange (en cours) === */
 .card.current .vinyl-center {
   background: var(--ink-0);
   box-shadow:
@@ -469,6 +472,20 @@ function goBack() {
   box-shadow:
     0 0 0 2px var(--ink-0),
     0 0 0 3px rgba(0,0,0,0.6);
+}
+
+/* === Variante blanche (non commencé) === */
+.card.avail .vinyl-center {
+  background: var(--ink-1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    0 0 0 1px rgba(255,255,255,0.1);
+}
+.card.avail .vinyl-hole {
+  background: var(--bone-0);
+  box-shadow:
+    0 0 0 2px var(--ink-0),
+    0 0 0 3px rgba(255,255,255,0.1);
 }
 
 /* ============ TEXTE ============ */
@@ -500,8 +517,8 @@ function goBack() {
   max-width: 60%;
 }
 .card.current .card-foot { border-top-color: rgba(11,11,12,0.3); }
-.card.done .card-foot,
-.card.open .card-foot { border-top-color: var(--ink-4); }
+.card.avail .card-foot { border-top-color: var(--ink-1); opacity: 0.85; }
+.card.done .card-foot { border-top-color: var(--ink-4); }
 
 .card-exos { display: flex; flex-direction: column; gap: 6px; }
 .card-exos-label {
