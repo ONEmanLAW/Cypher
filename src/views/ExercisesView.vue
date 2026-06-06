@@ -8,7 +8,7 @@ const progress = useProgressStore()
 
 /* Guard : sans son sélectionné, retour à l'écran de choix */
 onMounted(() => {
-  if (!progress.currentSoundId) router.replace('/')
+  if (!progress.currentSoundId) router.replace('/sounds')
 })
 
 const phases = [
@@ -45,7 +45,7 @@ const doneCount = computed(() => progress.doneCount)
 const currentSound = computed(() => progress.currentSound)
 
 function goBack() {
-  router.push('/')
+  router.push('/sounds')
 }
 </script>
 
