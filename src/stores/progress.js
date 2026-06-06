@@ -2,6 +2,20 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 /* ============================================================
+   SECTIONS — chapitres (contiennent des sons)
+   ============================================================ */
+export const SECTIONS = [
+  { id: 'fundamentals', number: '01', name: 'Fundamentals',      soundCount: 3, soundIds: ['kick', 'hihat', 'snare'], unlocked: true  },
+  { id: 'mouth-fx',     number: '02', name: 'Mouth FX',          soundCount: 5, soundIds: [], unlocked: true  },
+  { id: 'bass-lows',    number: '03', name: 'Bass & lows',       soundCount: 4, soundIds: [], unlocked: true  },
+  { id: 'hi-hats',      number: '04', name: 'Hi-hats',           soundCount: 4, soundIds: [], unlocked: true  },
+  { id: 'snares',       number: '05', name: 'Advanced snares',   soundCount: 4, soundIds: [], unlocked: false },
+  { id: 'vocals',       number: '06', name: 'Vocals & textures', soundCount: 3, soundIds: [], unlocked: false },
+  { id: 'patterns',     number: '07', name: 'Full patterns',     soundCount: 2, soundIds: [], unlocked: false },
+  { id: 'freestyle',    number: '08', name: 'Free style',        soundCount: 2, soundIds: [], unlocked: false },
+]
+
+/* ============================================================
    SONS — catalogue
    ============================================================ */
 export const SOUNDS = [
@@ -16,6 +30,23 @@ export const useProgressStore = defineStore('progress', () => {
   /* states[soundId] = { '01': 'done', '02': 'current', ... } */
   const states = ref({})
   const currentSoundId = ref(null)
+  const currentSectionId = ref(null)
+
+  /* ---------- SECTION COURANTE ---------- */
+  function setCurrentSection(sectionId) {
+    currentSectionId.value = sectionId
+  }
+
+  const currentSection = computed(() =>
+    SECTIONS.find((s) => s.id === currentSectionId.value) || null
+  )
+
+  // nb de sons maîtrisés (tous exos done) dans une section
+  function sectionDoneCount(sectionId) {
+    const section = SECTIONS.find((s) => s.id === sectionId)
+    if (!section) return 0
+    return section.soundIds.filter((id) => soundState(id) === 'done').length
+  }
 
   /* ---------- SON COURANT ---------- */
   function setCurrentSound(soundId) {
@@ -50,6 +81,7 @@ export const useProgressStore = defineStore('progress', () => {
   function reset() {
     states.value = {}
     currentSoundId.value = null
+    currentSectionId.value = null
   }
 
   /* ---------- COMPTEURS ---------- */
@@ -75,9 +107,15 @@ export const useProgressStore = defineStore('progress', () => {
   }
 
   return {
-    // catalogue
+    // catalogues
+    SECTIONS,
     SOUNDS,
     EXO_IDS,
+    // section courante
+    currentSectionId,
+    currentSection,
+    setCurrentSection,
+    sectionDoneCount,
     // son courant
     currentSoundId,
     currentSound,
