@@ -6,9 +6,9 @@ import { ref, computed } from 'vue'
    ============================================================ */
 export const SECTIONS = [
   { id: 'fundamentals', number: '01', name: 'Fundamentals',      soundCount: 3, soundIds: ['kick', 'hihat', 'snare'], unlocked: true  },
-  { id: 'mouth-fx',     number: '02', name: 'Mouth FX',          soundCount: 5, soundIds: [], unlocked: true  },
-  { id: 'bass-lows',    number: '03', name: 'Bass & lows',       soundCount: 4, soundIds: [], unlocked: true  },
-  { id: 'hi-hats',      number: '04', name: 'Hi-hats',           soundCount: 4, soundIds: [], unlocked: true  },
+  { id: 'mouth-fx',     number: '02', name: 'Mouth FX',          soundCount: 5, soundIds: [], unlocked: false  },
+  { id: 'bass-lows',    number: '03', name: 'Bass & lows',       soundCount: 4, soundIds: [], unlocked: false  },
+  { id: 'hi-hats',      number: '04', name: 'Hi-hats',           soundCount: 4, soundIds: [], unlocked: false  },
   { id: 'snares',       number: '05', name: 'Advanced snares',   soundCount: 4, soundIds: [], unlocked: false },
   { id: 'vocals',       number: '06', name: 'Vocals & textures', soundCount: 3, soundIds: [], unlocked: false },
   { id: 'patterns',     number: '07', name: 'Full patterns',     soundCount: 2, soundIds: [], unlocked: false },
@@ -19,9 +19,9 @@ export const SECTIONS = [
    SONS — catalogue
    ============================================================ */
 export const SOUNDS = [
-  { id: 'kick',   n: '01', name: 'Kick Drum', sub: 'the foot kick · the base.', label: 'Kick Drums',     unlocked: true },
-  { id: 'hihat',  n: '02', name: 'Hi-Hat',    sub: 'ts · ts · ts.',             label: 'Hi-Hat',         unlocked: true },
-  { id: 'snare',  n: '03', name: 'Snare',     sub: 'the central snap.',         label: 'K-snare-inward', unlocked: true },
+  { id: 'kick',   n: '01', name: 'Kick Drum', sub: 'the foot kick · the base.', label: 'Kick Drum',     unlocked: true },
+  { id: 'hihat',  n: '02', name: 'Hi-Hat',    sub: 'ts · ts · ts.',             label: 'Hi-hat',         unlocked: true },
+  { id: 'snare',  n: '03', name: 'Snare',     sub: 'the central snap.',         label: 'K Snare inward', unlocked: true },
 ]
 
 const EXO_IDS = ['01', '02', '03', '04', '05', '06']
