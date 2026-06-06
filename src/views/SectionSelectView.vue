@@ -37,7 +37,7 @@ function selectSection(s) {
 }
 
 function goBack() {
-  router.back()
+  router.push('/')
 }
 </script>
 

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useProgressStore } from '@/stores/progress'
 
+import ModeSelectView from '@/views/ModeSelectView.vue'
 import SectionSelectView from '@/views/SectionSelectView.vue'
 import SoundSelectView from '@/views/SoundSelectView.vue'
 import ExercisesView from '@/views/ExercisesView.vue'
@@ -14,7 +15,8 @@ import Exo06View from '@/views/Exo06View.vue'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/',          name: 'section-select', component: SectionSelectView },
+    { path: '/',          name: 'mode-select',    component: ModeSelectView },
+    { path: '/sections',  name: 'section-select', component: SectionSelectView },
     { path: '/sounds',    name: 'sound-select',   component: SoundSelectView },
     { path: '/exercises', name: 'exercises',      component: ExercisesView },
     { path: '/exo-01',    name: 'exo01',          component: Exo01View },
@@ -27,7 +29,7 @@ const router = createRouter({
 })
 
 /* Écrans de sélection libres ; les exos exigent un son sélectionné */
-const OPEN_PATHS = new Set(['/', '/sounds'])
+const OPEN_PATHS = new Set(['/', '/sections', '/sounds'])
 
 router.beforeEach((to) => {
   if (OPEN_PATHS.has(to.path)) return true

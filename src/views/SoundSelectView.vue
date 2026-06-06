@@ -34,7 +34,7 @@ function selectSound(sound) {
 }
 
 function goBack() {
-  router.push('/')
+  router.push('/sections')
 }
 </script>
 
