@@ -30,7 +30,7 @@ const PAUSE_FREEZE_MARGIN_DEG = 3
 
 const BPM = 80
 const LOOP_MS = (60_000 / BPM) * SLOT_COUNT
-const TOTAL_LOOPS = 8
+const TOTAL_LOOPS = 4
 const HISTORY_MAX = TOTAL_LOOPS
 
 const MAX_WARN = 1
@@ -290,12 +290,27 @@ function onCountdownDone() {
   lastTs = 0
 }
 
+/* ---- Confirmation avant Start ---- */
+const confirmOpen = ref(false)
+
+function requestStart() {
+  if (status.value === 'running' || status.value === 'countdown') return
+  confirmOpen.value = true
+}
+function cancelConfirm() {
+  confirmOpen.value = false
+}
+function confirmStart() {
+  confirmOpen.value = false
+  startCountdown()
+}
+
 function restart() {
   status.value = 'idle'
   statusKind.value = 'idle'
   statusText.value = ''
   resetSession()
-  startCountdown()
+  requestStart()
 }
 
 function stopSession() {
@@ -351,7 +366,7 @@ function registerHit() {
 function onKey(e) {
   if (e.code !== 'Space') return
   e.preventDefault()
-  if (status.value === 'idle' || status.value === 'done') startCountdown()
+  if (status.value === 'idle' || status.value === 'done') requestStart()
   else registerHit()
 }
 
@@ -361,6 +376,7 @@ function setDifficulty(key) {
   status.value = 'idle'
   statusKind.value = 'idle'
   statusText.value = ''
+  confirmOpen.value = false
   resetSession()
 }
 
@@ -377,6 +393,8 @@ function skip() {
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   rafId = requestAnimationFrame(tick)
+  // Micro actif par défaut (déclenche la demande de permission au montage)
+  if (!isListening.value) toggleMic()
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
@@ -557,7 +575,7 @@ onUnmounted(() => {
 
           <button
             v-if="status === 'idle'"
-            class="e06-play" type="button" @click="startCountdown">
+            class="e06-play" type="button" @click="requestStart">
             Play
           </button>
           <button
@@ -570,6 +588,48 @@ onUnmounted(() => {
             class="e06-play stop" type="button" @click="stopSession">
             Stop
           </button>
+        </div>
+      </div>
+
+      <!-- CONFIRMATION avant Start -->
+      <div v-if="confirmOpen" class="e06-confirm-backdrop">
+        <div class="e06-confirm">
+          <div>
+            <span class="mono-label">Get ready</span>
+            <h3 class="e06-confirm-title">Ready?</h3>
+          </div>
+
+          <div class="e06-confirm-rows">
+            <div class="e06-confirm-row">
+              <span class="e06-confirm-row-label">
+                <b>Difficulty</b>
+                <span>{{ targets.length }} target{{ targets.length > 1 ? 's' : '' }} · {{ TOTAL_LOOPS }} loops</span>
+              </span>
+              <span class="e06-confirm-badge">{{ PATTERNS[difficulty].label }}</span>
+            </div>
+
+            <div class="e06-confirm-row">
+              <span class="e06-confirm-row-label">
+                <b>Mode</b>
+                <span>{{ mode === 'pause'
+                  ? 'Clock pauses on your turn'
+                  : 'Clock never stops' }}</span>
+              </span>
+              <button
+                class="e06-mode-toggle"
+                :class="{ loop: mode === 'loop' }"
+                type="button"
+                @click="mode = mode === 'pause' ? 'loop' : 'pause'"
+              >
+                {{ mode === 'pause' ? 'Easy · pause' : 'Natural · loop' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="e06-confirm-actions">
+            <button class="footer-btn" type="button" @click="cancelConfirm">Cancel</button>
+            <button class="footer-cta" type="button" @click="confirmStart">▶ Start</button>
+          </div>
         </div>
       </div>
     </div>
@@ -990,6 +1050,95 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
+/* ---- CONFIRMATION OVERLAY ---- */
+.e06-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 5, 6, 0.72);
+  backdrop-filter: blur(2px);
+}
+.e06-confirm {
+  width: min(420px, 90%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-stage);
+}
+.e06-confirm-title {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-h2);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+}
+.e06-confirm-rows { display: flex; flex-direction: column; gap: 10px; }
+.e06-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.e06-confirm-row-label { display: flex; flex-direction: column; gap: 3px; }
+.e06-confirm-row-label b {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg-primary);
+}
+.e06-confirm-row-label span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.e06-confirm-badge {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  color: var(--brand);
+  padding: 4px 12px;
+  border: 1px solid var(--brand);
+  border-radius: 4px;
+}
+.e06-mode-toggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-on-orange);
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast);
+}
+.e06-mode-toggle.loop {
+  background: transparent;
+  color: var(--fg-primary);
+  border-color: var(--line-strong);
+}
+.e06-mode-toggle:hover { border-color: var(--brand); }
+.e06-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .exo-footer {
   display: flex;
   align-items: center;
@@ -1049,4 +1198,5 @@ onUnmounted(() => {
   transition: background-color var(--dur-fast);
 }
 .footer-cta:hover { background: var(--brand-hover); }
+.footer-cta:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
