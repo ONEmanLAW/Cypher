@@ -67,10 +67,16 @@ const { isListening, toggle, stop: stopDetector } = useBeatboxDetector({
 const activeStep = computed(() => steps[activeIdx.value] || steps[steps.length - 1])
 const isFinished = computed(() => activeIdx.value >= steps.length)
 
+/* Quand fini : on garde le dernier step au centre (pas de dérive à gauche) */
+const windowCenter = computed(() =>
+  isFinished.value ? steps.length - 1 : activeIdx.value
+)
+
 const windowSteps = computed(() => {
   const out = []
+  const center = windowCenter.value
   for (let off = -2; off <= 2; off++) {
-    const idx = activeIdx.value + off
+    const idx = center + off
     out.push({
       slot: off,
       idx,
@@ -233,8 +239,9 @@ function skip() {
 }
 
 onMounted(() => {
-  if (!currentSound.value) router.replace('/')
-  else startLocalMic()
+  if (!currentSound.value) return router.replace('/')
+  startLocalMic()
+  if (!isListening.value) toggle() // mic activé par défaut
 })
 
 onBeforeUnmount(() => {
@@ -317,7 +324,7 @@ onBeforeUnmount(() => {
             <template v-else>
               <div class="e03-feedback-pill done">
                 <span class="e03-feedback-icon">★</span>
-                Series complete
+                Exercise completed
               </div>
               <button class="e03-restart-btn" type="button" @click="restart">
                 ↻ Restart
