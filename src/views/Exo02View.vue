@@ -36,7 +36,8 @@ const targetLabel = computed(() => currentSound.value?.label)
 
 const { isListening, error, toggle, stop } = useBeatboxDetector({
   targetLabel,
-  onPrediction: ({ label, confidence }) => onPrediction(label, confidence),
+  threshold: 0.1, // bas : on capte aussi les tentatives faibles / mauvais son
+  onHit: ({ label, confidence }) => onPrediction(label, confidence),
 })
 
 /* ---------- CLASSIFICATION ----------
