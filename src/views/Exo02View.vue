@@ -16,6 +16,9 @@ const DEFAULT_GOAL = 21
 const CONF_OK = 0.6   // ≥ : bien
 const CONF_LOW = 0.3  // < : mal fait
 const FEEDBACK_MS = 700
+const EVAL_MS = 250   // fenêtre pour retenir la meilleure prédiction d'une tentative
+
+const norm = (s) => String(s ?? '').trim().toLowerCase()
 
 const goal = ref(DEFAULT_GOAL)
 const current = ref(0)
@@ -33,15 +36,33 @@ const targetLabel = computed(() => currentSound.value?.label)
 
 const { isListening, error, toggle, stop } = useBeatboxDetector({
   targetLabel,
-  threshold: 0.1, // bas : on capte aussi les tentatives faibles / ratées
-  onHit: ({ label, confidence }) => classify(label, confidence),
+  onPrediction: ({ label, confidence }) => onPrediction(label, confidence),
 })
 
-/* ---------- CLASSIFICATION ---------- */
-function classify(label, confidence) {
+/* ---------- CLASSIFICATION ----------
+   On reçoit le flux brut de prédictions. Une tentative produit plusieurs
+   messages (montée du son) ; on retient la meilleure confidence sur EVAL_MS
+   puis on tranche une seule fois. */
+let evalActive = false
+let evalBest = { label: null, confidence: 0 }
+
+function onPrediction(label, confidence) {
   if (done.value || lock.value) return
 
-  if (label !== targetLabel.value) return setFlash('wrong')
+  if (!evalActive) {
+    evalActive = true
+    evalBest = { label, confidence }
+    setTimeout(finishEval, EVAL_MS)
+  } else if (confidence > evalBest.confidence) {
+    evalBest = { label, confidence }
+  }
+}
+
+function finishEval() {
+  evalActive = false
+  const { label, confidence } = evalBest
+
+  if (norm(label) !== norm(targetLabel.value)) return setFlash('wrong')
   if (confidence < CONF_LOW) return setFlash('bad')
   if (confidence < CONF_OK) return setFlash('almost')
 
@@ -68,8 +89,8 @@ function setFlash(kind) {
 const feedback = computed(() => {
   switch (flash.value) {
     case 'good':   return { tone: 'good', icon: '✓', text: 'Nice!' }
-    case 'almost': return { tone: 'low',  icon: '~', text: 'Almost,make it cleaner' }
-    case 'bad':    return { tone: 'high', icon: '✕', text: 'Missed, try again' }
+    case 'almost': return { tone: 'low',  icon: '~', text: 'Almost — make it cleaner' }
+    case 'bad':    return { tone: 'high', icon: '✕', text: 'Missed — try again' }
     case 'wrong':  return { tone: 'high', icon: '✕', text: 'Wrong sound' }
     default:       return { tone: 'idle', icon: '♪', text: 'Hit the sound' }
   }
@@ -81,7 +102,7 @@ const pad = (n) => String(n).padStart(2, '0')
 
 /* ---------- RESTART ---------- */
 function applyRestart(nextGoal) {
-  goal.value = Math.min(99, Math.max(1, nextGoal))
+  goal.value = Math.min(100, Math.max(21, nextGoal))
   current.value = 0
   done.value = false
   flash.value = null
@@ -91,7 +112,7 @@ function applyRestart(nextGoal) {
 }
 function restartDefault() { applyRestart(DEFAULT_GOAL) }
 function restartCustom() { applyRestart(customGoal.value || DEFAULT_GOAL) }
-function stepCustom(d) { customGoal.value = Math.min(99, Math.max(1, (customGoal.value || 0) + d)) }
+function stepCustom(d) { customGoal.value = Math.min(100, Math.max(21, (customGoal.value || 21) + d)) }
 
 function skip() {
   stop()
@@ -175,27 +196,32 @@ onBeforeUnmount(stop)
                 </button>
               </div>
 
-              <div v-if="restartOpen" class="e02-restart-panel">
-                <div class="e02-restart-title">Choose your goal</div>
-                <div class="e02-restart-opts">
-                  <button class="e02-opt" type="button" @click="restartDefault">
-                    <span class="e02-opt-name">Default program</span>
-                    <span class="e02-opt-meta">{{ DEFAULT_GOAL }} sounds</span>
-                  </button>
+              <div v-if="restartOpen" class="e02-modal">
+                <div class="e02-modal-backdrop" @click="restartOpen = false" />
+                <div class="e02-restart-panel">
+                  <div class="e02-restart-title">Choose your goal</div>
+                  <div class="e02-restart-opts">
+                    <button class="e02-opt default" type="button" @click="restartDefault">
+                      <span class="e02-opt-tag">Default program</span>
+                      <span class="e02-opt-big">{{ DEFAULT_GOAL }}</span>
+                      <span class="e02-opt-unit">reps</span>
+                    </button>
 
-                  <div class="e02-opt custom">
-                    <span class="e02-opt-name">Custom goal</span>
-                    <div class="e02-opt-row">
-                      <button class="e02-step-btn" type="button" @click="stepCustom(-1)">−</button>
-                      <input
-                        class="e02-goal-input"
-                        type="number"
-                        min="1"
-                        max="99"
-                        v-model.number="customGoal"
-                      />
-                      <button class="e02-step-btn" type="button" @click="stepCustom(1)">+</button>
-                      <button class="e02-opt-go" type="button" @click="restartCustom">Go →</button>
+                    <div class="e02-opt custom">
+                      <span class="e02-opt-tag">Custom goal</span>
+                      <div class="e02-opt-row">
+                        <button class="e02-step-btn" type="button" @click="stepCustom(-1)">−</button>
+                        <input
+                          class="e02-goal-input"
+                          type="number"
+                          min="21"
+                          max="100"
+                          v-model.number="customGoal"
+                        />
+                        <button class="e02-step-btn" type="button" @click="stepCustom(1)">+</button>
+                        <button class="e02-opt-go" type="button" @click="restartCustom">Go →</button>
+                      </div>
+                      <span class="e02-opt-hint">min 21 · max 100</span>
                     </div>
                   </div>
                 </div>
@@ -428,15 +454,34 @@ onBeforeUnmount(stop)
 }
 .e02-restart-btn:hover { background: var(--brand); color: var(--fg-on-orange); }
 
+.e02-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.e02-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 5, 6, 0.72);
+  backdrop-filter: blur(3px);
+}
 .e02-restart-panel {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  gap: 16px;
+  padding: 24px;
   border: 1px solid var(--line);
   background: var(--surface-card);
-  min-width: 420px;
+  box-shadow: var(--shadow-stage);
+  min-width: 460px;
   max-width: 90vw;
+  animation: hit-pop var(--dur-base) var(--ease-out-snap);
 }
 .e02-restart-title {
   font-family: var(--font-mono);
@@ -453,7 +498,7 @@ onBeforeUnmount(stop)
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  padding: 16px;
+  padding: 18px;
   background: var(--ink-3);
   border: 1px solid var(--line);
   border-radius: 2px;
@@ -462,17 +507,31 @@ onBeforeUnmount(stop)
   transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 button.e02-opt:hover { border-color: var(--brand); }
-.e02-opt.custom { cursor: default; }
-.e02-opt-name {
-  font-family: var(--font-display);
-  font-size: 18px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  color: var(--fg-primary);
-}
-.e02-opt-meta {
+.e02-opt.custom { cursor: default; justify-content: space-between; }
+.e02-opt-tag {
   font-family: var(--font-mono);
   font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.e02-opt-big {
+  font-family: var(--font-display);
+  font-size: 64px;
+  line-height: 0.9;
+  letter-spacing: var(--ls-display);
+  color: var(--brand);
+}
+.e02-opt-unit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+}
+.e02-opt-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -521,6 +580,11 @@ button.e02-opt:hover { border-color: var(--brand); }
   transition: background var(--dur-fast);
 }
 .e02-opt-go:hover { background: var(--brand-hover); }
+
+@media (max-width: 640px) {
+  .e02-restart-panel { min-width: 0; width: 100%; }
+  .e02-restart-opts { flex-direction: column; }
+}
 
 /* footer */
 .exo-footer {
