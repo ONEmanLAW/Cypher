@@ -32,20 +32,25 @@ async def detect(ws: WebSocket):
     try:
         while True:
             raw = await ws.receive_bytes()
-            x = np.frombuffer(raw, dtype=np.float32)
+            # 👇 une frame invalide ne doit PAS fermer la socket
+            try:
+                x = np.frombuffer(raw, dtype=np.float32)
 
-            rms = compute_rms(x)
-            if rms < 0.01:
-                await ws.send_json({"label": None, "confidence": 0.0, "rms": rms})
+                rms = compute_rms(x)
+                if rms < 0.01:
+                    await ws.send_json({"label": None, "confidence": 0.0, "rms": rms})
+                    continue
+
+                feat = extractor.features(x).reshape(1, -1)
+                probas = model.predict_proba(feat)[0]
+                top = int(np.argmax(probas))
+                await ws.send_json({
+                    "label": str(model.classes_[top]),
+                    "confidence": float(probas[top]),
+                    "rms": float(rms),
+                })
+            except Exception as e:
+                print("frame error:", e)
                 continue
-
-            feat = extractor.features(x).reshape(1, -1)
-            probas = model.predict_proba(feat)[0]
-            top = int(np.argmax(probas))
-            await ws.send_json({
-                "label": str(model.classes_[top]),
-                "confidence": float(probas[top]),
-                "rms": float(rms),
-            })
     except WebSocketDisconnect:
         pass

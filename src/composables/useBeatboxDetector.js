@@ -1,7 +1,6 @@
 // src/composables/useBeatboxDetector.js
 import { ref, onBeforeUnmount } from 'vue'
 
-// 👇 absorbe espaces/casse entre label modèle et label cible
 const normalize = (s) => String(s ?? '').trim().toLowerCase()
 
 export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
@@ -28,10 +27,54 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
   let lastHitAt = 0
   const COOLDOWN_MS = 180
 
+  // 🔌 reconnexion
+  let manualStop = false
+  let reconnectTimer = null
+  const RECONNECT_DELAY_MS = 1000
+
+  function connectWs() {
+    ws = new WebSocket('ws://localhost:8000/detect')
+    ws.binaryType = 'arraybuffer'
+
+    ws.onopen = () => {
+      error.value = null
+    }
+
+    ws.onmessage = (e) => {
+      const { label, confidence } = JSON.parse(e.data)
+      lastLabel.value = label
+      lastConfidence.value = confidence
+
+      const now = performance.now()
+      if (
+        normalize(label) === normalize(targetLabel.value) &&
+        confidence >= threshold &&
+        now - lastHitAt > COOLDOWN_MS
+      ) {
+        lastHitAt = now
+        onHit?.({ label, confidence })
+      }
+    }
+
+    // onerror → on force la fermeture, onclose gère le retry
+    ws.onerror = () => {
+      try { ws.close() } catch {}
+    }
+
+    ws.onclose = () => {
+      if (manualStop) return
+      error.value = 'Reconnecting…'
+      clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(connectWs, RECONNECT_DELAY_MS)
+    }
+  }
+
   async function start() {
     if (isListening.value) return
     try {
       error.value = null
+      manualStop = false
+
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
@@ -44,28 +87,8 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
       source = audioCtx.createMediaStreamSource(stream)
       processor = audioCtx.createScriptProcessor(2048, 1, 1)
 
-      ws = new WebSocket('ws://localhost:8000/detect')
-      ws.binaryType = 'arraybuffer'
-      await new Promise((res, rej) => {
-        ws.onopen = res
-        ws.onerror = () => rej(new Error('Cannot connect to detector'))
-      })
-
-      ws.onmessage = (e) => {
-        const { label, confidence } = JSON.parse(e.data)
-        lastLabel.value = label
-        lastConfidence.value = confidence
-
-        const now = performance.now()
-        if (
-          normalize(label) === normalize(targetLabel.value) &&
-          confidence >= threshold &&
-          now - lastHitAt > COOLDOWN_MS
-        ) {
-          lastHitAt = now
-          onHit?.({ label, confidence })
-        }
-      }
+      // pas de await : la reconnexion gère la connexion en arrière-plan
+      connectWs()
 
       processor.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0)
@@ -91,6 +114,7 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
         const hasOnset = aboveGateSince > 0
         const enoughSamples = buffer.length >= CHUNK_SAMPLES
 
+        // si ws down/reconnexion en cours → on n'envoie juste pas
         if (
           hasOnset &&
           enoughSamples &&
@@ -113,11 +137,13 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
   }
 
   function stop() {
+    manualStop = true
+    clearTimeout(reconnectTimer)
     try { processor?.disconnect() } catch {}
     try { source?.disconnect() } catch {}
     stream?.getTracks().forEach((t) => t.stop())
     audioCtx?.close().catch(() => {})
-    ws?.close()
+    try { ws?.close() } catch {}
     processor = source = stream = audioCtx = ws = null
     buffer = []
     aboveGateSince = -1
