@@ -73,6 +73,19 @@ const youActive = computed(
   () => phase.value === 'play' || phase.value === 'compare'
 )
 
+/* ---- Stepper (drivé par phase) ---- */
+const STEP_ORDER = ['listen', 'play', 'compare']
+const STEPS = [
+  { key: 'listen',  n: 1, title: 'Listen',    desc: 'Memorize the pattern' },
+  { key: 'play',    n: 2, title: 'Your turn',  desc: 'Reproduce it' },
+  { key: 'compare', n: 3, title: 'Compare',    desc: 'Read your score' }
+]
+function stepState (key) {
+  const cur = STEP_ORDER.indexOf(phase.value)
+  const idx = STEP_ORDER.indexOf(key)
+  return idx < cur ? 'done' : idx === cur ? 'active' : 'todo'
+}
+
 const scoredHits = computed(() => {
   const targets = teacherPattern.value.map(c => ({ cell: c, taken: false }))
   return playerHits.value.map(hit => {
@@ -229,6 +242,16 @@ function playCall () {
 
 const countdownEl = ref(null)
 
+/* ---- Confirmation avant "Your turn" ---- */
+const confirmOpen = ref(false)
+
+function requestYourTurn () { confirmOpen.value = true }
+function cancelConfirm ()  { confirmOpen.value = false }
+function confirmStart () {
+  confirmOpen.value = false
+  startYourTurn()
+}
+
 function startYourTurn () {
   playerHits.value = []
   playedMode.value = modeOf(teacherGuide.value)
@@ -245,6 +268,7 @@ function setDifficulty (key) {
   if (difficulty.value === key) return
   cancelAnimationFrame(rafId)
   countdownEl.value?.stop()
+  confirmOpen.value = false
   isRunning.value = false
   difficulty.value = key
   playerHits.value = []
@@ -267,7 +291,11 @@ function onKeydown (e) {
   playKick()
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  // Micro actif par défaut (déclenche la demande de permission au montage)
+  if (!isListening.value) toggleMic()
+})
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(rafId)
@@ -325,13 +353,21 @@ const callLabel = computed(() =>
       <div class="stage-pad">
         <!-- topbar -->
         <div class="e05-topbar">
-          <div class="e05-modes">
-            <span class="e05-mode" :class="{ active: phase === 'listen' }">1 · Listen</span>
-            <span class="e05-mode-arrow">→</span>
-            <span class="e05-mode" :class="{ active: phase === 'play' }">2 · Your turn</span>
-            <span class="e05-mode-arrow">→</span>
-            <span class="e05-mode" :class="{ active: phase === 'compare' }">3 · Compare</span>
-          </div>
+          <!-- STEPPER mis en valeur -->
+          <ol class="e05-steps">
+            <li
+              v-for="s in STEPS"
+              :key="s.key"
+              class="e05-step-item"
+              :class="stepState(s.key)"
+            >
+              <span class="e05-step-num">{{ s.n }}</span>
+              <span class="e05-step-body">
+                <span class="e05-step-title">{{ s.title }}</span>
+                <span class="e05-step-desc">{{ s.desc }}</span>
+              </span>
+            </li>
+          </ol>
 
           <div class="e05-diff">
             <span class="mono-label">Difficulty</span>
@@ -429,7 +465,10 @@ const callLabel = computed(() =>
         <div class="e05-panel">
           <template v-if="phase === 'listen'">
             <div class="e05-panel-info">
-              <span class="mono-label">Step 1 · Listen</span>
+              <span class="e05-panel-head">
+                <span class="e05-panel-num">1</span>
+                <span class="e05-panel-step-title">Listen</span>
+              </span>
               <p class="e05-panel-text">
                 Play the call and memorize the kick pattern.
               </p>
@@ -452,7 +491,7 @@ const callLabel = computed(() =>
                 class="footer-cta"
                 type="button"
                 :disabled="!hasHeardCall"
-                @click="startYourTurn"
+                @click="requestYourTurn"
               >
                 ▶ Your turn
               </button>
@@ -461,7 +500,10 @@ const callLabel = computed(() =>
 
           <template v-else-if="phase === 'play'">
             <div class="e05-panel-info">
-              <span class="mono-label">Step 2 · Your turn</span>
+              <span class="e05-panel-head">
+                <span class="e05-panel-num">2</span>
+                <span class="e05-panel-step-title">Your turn</span>
+              </span>
               <p class="e05-panel-text">
                 Make the <em>{{ currentSound?.name }}</em> sound on every beat.
                 {{ teacherGuide
@@ -476,7 +518,10 @@ const callLabel = computed(() =>
 
           <template v-else>
             <div class="e05-panel-info">
-              <span class="mono-label">Step 3 · Compare</span>
+              <span class="e05-panel-head">
+                <span class="e05-panel-num">3</span>
+                <span class="e05-panel-step-title">Compare</span>
+              </span>
               <div class="e05-feedback">
                 <span class="placed" :class="{ pass: isScorePass }">
                   {{ scoreLabel }}
@@ -502,6 +547,39 @@ const callLabel = computed(() =>
               </button>
             </div>
           </template>
+        </div>
+      </div>
+
+      <!-- CONFIRMATION avant Your turn -->
+      <div v-if="confirmOpen" class="e05-confirm-backdrop">
+        <div class="e05-confirm">
+          <div>
+            <span class="mono-label">Step 2 · Your turn</span>
+            <h3 class="e05-confirm-title">Ready?</h3>
+          </div>
+
+          <div class="e05-confirm-rows">
+            <div class="e05-confirm-row">
+              <span class="e05-confirm-row-label">
+                <b>Teacher guide</b>
+                <span>{{ teacherGuide ? 'Pattern shown' : 'Play by ear' }}</span>
+              </span>
+              <button
+                class="e05-guide"
+                :class="{ off: !teacherGuide }"
+                type="button"
+                @click="teacherGuide = !teacherGuide"
+              >
+                <span class="e05-guide-dot" />
+                {{ teacherGuide ? 'ON' : 'OFF' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="e05-confirm-actions">
+            <button class="footer-btn" type="button" @click="cancelConfirm">Cancel</button>
+            <button class="footer-cta" type="button" @click="confirmStart">▶ Start</button>
+          </div>
         </div>
       </div>
     </div>
@@ -638,24 +716,71 @@ const callLabel = computed(() =>
   gap: 24px;
 }
 
-.e05-modes { display: flex; align-items: center; gap: 12px; }
-.e05-mode {
-  padding: 8px 14px;
+/* ---- STEPPER ---- */
+.e05-steps { display: flex; list-style: none; margin: 0; padding: 0; }
+.e05-step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
   background: var(--ink-3);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-right: none;
+  opacity: 0.5;
+  transition: opacity var(--dur-base), background-color var(--dur-base);
+}
+.e05-step-item:first-child { border-radius: 4px 0 0 4px; }
+.e05-step-item:last-child  { border-right: 1px solid var(--line); border-radius: 0 4px 4px 0; }
+
+.e05-step-num {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: var(--bw-thin) solid var(--line-strong);
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--fg-muted);
+}
+.e05-step-body { display: flex; flex-direction: column; gap: 2px; }
+.e05-step-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+}
+.e05-step-desc {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-.e05-mode.active {
-  background: var(--brand);
-  border-color: var(--brand);
+
+.e05-step-item.done { opacity: 1; }
+.e05-step-item.done .e05-step-num {
+  background: var(--orange-700);
+  border-color: var(--orange-700);
   color: var(--fg-on-orange);
 }
-.e05-mode-arrow { color: var(--fg-muted); }
+.e05-step-item.active {
+  opacity: 1;
+  background: var(--brand);
+  border-color: var(--brand);
+  box-shadow: var(--shadow-glow);
+  z-index: 1;
+}
+.e05-step-item.active .e05-step-num {
+  background: var(--fg-on-orange);
+  border-color: var(--fg-on-orange);
+  color: var(--brand);
+}
+.e05-step-item.active .e05-step-title,
+.e05-step-item.active .e05-step-desc { color: var(--fg-on-orange); }
 
 .e05-diff {
   display: flex;
@@ -797,6 +922,31 @@ const callLabel = computed(() =>
   min-height: 72px;
 }
 .e05-panel-info { display: flex; flex-direction: column; gap: 8px; }
+.e05-panel-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.e05-panel-num {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--fg-on-orange);
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1;
+}
+.e05-panel-step-title {
+  font-family: var(--font-display);
+  font-size: var(--t-h3);
+  line-height: 1;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  color: var(--fg-primary);
+}
 .e05-panel-text {
   margin: 0;
   font-family: var(--font-ui);
@@ -879,6 +1029,65 @@ const callLabel = computed(() =>
 }
 .e05-guide.off { color: var(--fg-muted); }
 .e05-guide.off .e05-guide-dot { background: var(--ink-6); }
+
+/* ---- CONFIRMATION OVERLAY ---- */
+.e05-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 5, 6, 0.72);
+  backdrop-filter: blur(2px);
+}
+.e05-confirm {
+  width: min(420px, 90%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-stage);
+}
+.e05-confirm-title {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-h2);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+}
+.e05-confirm-rows { display: flex; flex-direction: column; gap: 10px; }
+.e05-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.e05-confirm-row-label { display: flex; flex-direction: column; gap: 3px; }
+.e05-confirm-row-label b {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg-primary);
+}
+.e05-confirm-row-label span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.e05-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
 
 .exo-footer {
   display: flex;
