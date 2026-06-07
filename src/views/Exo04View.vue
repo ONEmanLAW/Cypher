@@ -4,7 +4,7 @@ import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const progress = useProgressStore()
@@ -23,14 +23,17 @@ const CY = SIZE / 2
 const RADIUS = 230
 const circumference = 2 * Math.PI * RADIUS
 
-const TOTAL_LOOPS = 8
-const ACTIVE_BEATS = BEATS - 1
+const TOTAL_LOOPS = 4
+const PASS_SCORE = Math.ceil(TOTAL_LOOPS * 0.75) // 3 / 4
 
 const PERFECT_DEG = 12
 const OK_DEG = 24
 
 const MAX_WARN = 2
 const MAX_BAD = 1
+
+/* index du beat utilisé pour "nettoyer" le temps fort (mi-parcours) */
+const RESET_BEAT_0_AT = Math.floor(BEATS / 2) // 4
 
 function polar (deg, r = RADIUS) {
   const rad = ((deg - 90) * Math.PI) / 180
@@ -51,7 +54,7 @@ const trailAngle = ref(0)
 const countdownEl = ref(null)
 
 const streak = ref(0)
-const streakGoal = 8
+const streakGoal = TOTAL_LOOPS
 const history = ref([])
 const loopCount = ref(0)
 const sessionDone = ref(false)
@@ -68,6 +71,14 @@ const statusText = ref('')
 const beatMs = computed(() => 60000 / bpm.value)
 const loopMs = computed(() => beatMs.value * BEATS)
 const trailLen = computed(() => (trailAngle.value / 360) * circumference)
+
+/* difficulté dérivée du tempo */
+const difficulty = computed(() => {
+  if (bpm.value <= 80) return 'Easy'
+  if (bpm.value <= 120) return 'Medium'
+  if (bpm.value <= 160) return 'Hard'
+  return 'Very Hard'
+})
 
 const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   targetLabel,
@@ -126,6 +137,7 @@ function loopIsValid (bad, warn) {
 }
 
 function finishLoop () {
+  // beat 0 (temps fort) exclu : purement visuel, jamais marqué bad automatiquement
   for (let i = 1; i < BEATS; i++) {
     if (tickStates.value[i] === 'idle') tickStates.value[i] = 'bad'
   }
@@ -139,13 +151,17 @@ function finishLoop () {
   streak.value = valid ? streak.value + 1 : 0
 
   statusKind.value = valid ? 'good' : 'bad'
-  statusText.value = valid
-    ? `Loop ${loopCount.value} · clean`
-    : `Loop ${loopCount.value} · ${bad}x ${warn}~`
+  statusText.value = `Loop ${loopCount.value}`
 }
 
+/* reset complet (beats 0..7) — utilisé au démarrage */
 function resetTicks () {
   tickStates.value = Array(BEATS).fill('idle')
+}
+
+/* reset des beats actifs uniquement (1..7) — le temps fort (0) est préservé */
+function resetActiveTicks () {
+  for (let i = 1; i < BEATS; i++) tickStates.value[i] = 'idle'
 }
 
 function finishSession () {
@@ -156,7 +172,7 @@ function finishSession () {
   running.value = false
   sessionDone.value = true
   stopLoop()
-  statusKind.value = score >= 6 ? 'good' : 'bad'
+  statusKind.value = score >= PASS_SCORE ? 'good' : 'bad'
   statusText.value = `Score ${score} / ${TOTAL_LOOPS}`
   progress.markDone('04')
 }
@@ -171,13 +187,22 @@ function loop (now) {
 
   if (beatIndex !== lastBeat) {
     if (beatIndex < lastBeat) {
+      // bascule de boucle
       finishLoop()
       if (loopCount.value >= TOTAL_LOOPS) {
         finishSession()
         return
       }
-      resetTicks()
+      // on garde le temps fort (beat 0) affiché, on ne reset que 1..7
+      resetActiveTicks()
     }
+
+    // nettoyage du temps fort à mi-parcours : la fenêtre du downbeat
+    // (juste avant / juste après la bascule) reste donc toujours visible
+    if (beatIndex === RESET_BEAT_0_AT) {
+      tickStates.value[0] = 'idle'
+    }
+
     lastBeat = beatIndex
     currentBeat.value = beatIndex
     playTick(beatIndex === 0)
@@ -209,15 +234,19 @@ function stopLoop () {
   currentBeat.value = -1
   trailAngle.value = 0
   cursorPos.value = polar(0)
+  // on éteint bien le temps fort à l'arrêt / fin de session
+  tickStates.value[0] = 'idle'
 }
 
 function registerHit () {
   playKick()
   const cursorDeg = trailAngle.value
 
+  // beat 0 inclus : un hit sur le temps fort tombe sur le rond du haut
+  // (et n'est plus rabattu à tort sur le beat 1)
   let bestIdx = -1
   let bestDist = Infinity
-  for (let i = 1; i < BEATS; i++) {
+  for (let i = 0; i < BEATS; i++) {
     const d = angleDiff(cursorDeg, (360 / BEATS) * i)
     if (d < bestDist) { bestDist = d; bestIdx = i }
   }
@@ -261,6 +290,12 @@ function skip () {
 }
 
 window.addEventListener('keydown', onKeydown)
+
+onMounted(() => {
+  // micro activé par défaut (désactivable via le bouton footer)
+  if (!isListening.value) toggleMic()
+})
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(rafId)
@@ -390,6 +425,9 @@ onBeforeUnmount(() => {
                 <button class="e04-tempo-btn" type="button"
                         :disabled="running" @click="changeBpm(5)">+</button>
               </div>
+              <span class="e04-difficulty" :class="difficulty.toLowerCase()">
+                {{ difficulty }}
+              </span>
             </div>
 
             <button
@@ -718,6 +756,21 @@ onBeforeUnmount(() => {
 }
 .e04-tempo-btn:hover:not(:disabled) { border-color: var(--brand); }
 .e04-tempo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* label difficulté · discret, sous le tempo */
+.e04-difficulty {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  transition: color var(--dur-fast);
+}
+.e04-difficulty.easy   { color: var(--state-good); }
+.e04-difficulty.medium { color: var(--state-warn); }
+.e04-difficulty.hard   { color: var(--state-bad); }
 
 .e04-transport {
   font-family: var(--font-display);
