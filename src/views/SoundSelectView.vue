@@ -30,6 +30,14 @@ const STATE_PILL = {
   locked:  'Locked',
 }
 
+/* Pilote la vitesse du vinyle sans saut : on change le playbackRate de
+   l'animation en cours, qui continue depuis l'angle courant. */
+function setVinylSpeed(e, rate) {
+  if (e.currentTarget.disabled) return
+  const anim = e.currentTarget.querySelector('.vinyl')?.getAnimations?.()[0]
+  if (anim) anim.playbackRate = rate
+}
+
 function selectSound(sound) {
   if (!sound.unlocked) return
   progress.setCurrentSound(sound.id)
@@ -111,6 +119,8 @@ function goBack() {
             :class="[s.state]"
             :disabled="!s.unlocked"
             @click="selectSound(s)"
+            @mouseenter="setVinylSpeed($event, 3.2)"
+            @mouseleave="setVinylSpeed($event, 1)"
           >
             <!-- VINYLE -->
             <div class="vinyl">
@@ -415,9 +425,7 @@ function goBack() {
   to   { transform: translateY(-50%) rotate(360deg); }
 }
 
-.card:not(:disabled):hover .vinyl {
-  animation-duration: 2.5s;
-}
+/* La vitesse est gérée via playbackRate en JS (pas de saut). */
 
 .vinyl-grooves {
   position: absolute;
