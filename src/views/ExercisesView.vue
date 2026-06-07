@@ -381,23 +381,23 @@ function goBack() {
 }
 .card-name {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1.05;
   letter-spacing: -0.005em;
   text-transform: uppercase;
   color: var(--fg-primary);
   font-weight: 400;
 }
-.card.dense .card-name { font-size: 17px; }
+.card.dense .card-name { font-size: 19px; }
 .card-desc {
   margin: 6px 0 0;
   font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-secondary);
   letter-spacing: -0.005em;
 }
-.card.dense .card-desc { font-size: 11px; }
+.card.dense .card-desc { font-size: 12px; }
 .card-spacer { flex: 1; min-height: 8px; }
 .card-foot {
   display: flex;
