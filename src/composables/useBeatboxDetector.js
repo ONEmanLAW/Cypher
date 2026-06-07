@@ -1,6 +1,9 @@
 // src/composables/useBeatboxDetector.js
 import { ref, onBeforeUnmount } from 'vue'
 
+// 👇 absorbe espaces/casse entre label modèle et label cible
+const normalize = (s) => String(s ?? '').trim().toLowerCase()
+
 export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
   const isListening = ref(false)
   const lastLabel = ref(null)
@@ -14,19 +17,16 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
   let ws = null
   let buffer = []
 
-  // ⚡ chunks plus courts + overlap plus serré
-  const CHUNK_SAMPLES = 24000   // 0.5s @ 48kHz (au lieu de 1s)
-  const HOP_SAMPLES = 6000      // envoi toutes les 125ms (au lieu de 500ms)
+  const CHUNK_SAMPLES = 24000
+  const HOP_SAMPLES = 6000
 
-  // 🥁 onset detection — on n'envoie au modèle QUE si on a vu un pic d'énergie
-  const RMS_GATE = 0.015        // seuil min pour considérer qu'il y a un son
-  let aboveGateSince = -1       // index du sample où l'énergie a dépassé le gate
+  const RMS_GATE = 0.015
+  let aboveGateSince = -1
   let lastSentAt = 0
   const MIN_SEND_INTERVAL_MS = 80
 
-  // cooldown sur l'incrément du compteur
   let lastHitAt = 0
-  const COOLDOWN_MS = 180       // entre 2 hits validés (un humain max ~5-6 sons/s)
+  const COOLDOWN_MS = 180
 
   async function start() {
     if (isListening.value) return
@@ -58,7 +58,7 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
 
         const now = performance.now()
         if (
-          label === targetLabel.value &&
+          normalize(label) === normalize(targetLabel.value) &&
           confidence >= threshold &&
           now - lastHitAt > COOLDOWN_MS
         ) {
@@ -70,15 +70,12 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
       processor.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0)
 
-        // calcule RMS du frame courant
         let sum = 0
         for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
         const frameRms = Math.sqrt(sum / input.length)
 
-        // remplit le buffer
         for (let i = 0; i < input.length; i++) buffer.push(input[i])
 
-        // détecte montée d'énergie (front montant)
         if (frameRms > RMS_GATE && aboveGateSince < 0) {
           aboveGateSince = buffer.length
         }
@@ -86,15 +83,10 @@ export function useBeatboxDetector({ targetLabel, onHit, threshold = 0.6 }) {
           aboveGateSince = -1
         }
 
-        // limite la taille du buffer pour éviter qu'il grossisse
         if (buffer.length > CHUNK_SAMPLES * 2) {
           buffer = buffer.slice(-CHUNK_SAMPLES * 2)
         }
 
-        // n'envoie que si :
-        // - on a assez de samples
-        // - on a vu un onset récent
-        // - pas trop souvent
         const now = performance.now()
         const hasOnset = aboveGateSince > 0
         const enoughSamples = buffer.length >= CHUNK_SAMPLES
