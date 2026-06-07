@@ -11,30 +11,87 @@ const progress = useProgressStore()
 const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 
-const GOAL = 21
+/* ---------- CONFIG ---------- */
+const DEFAULT_GOAL = 21
+const CONF_OK = 0.6   // ≥ : bien
+const CONF_LOW = 0.3  // < : mal fait
+const FEEDBACK_MS = 700
+
+const goal = ref(DEFAULT_GOAL)
 const current = ref(0)
 const done = ref(false)
 
+/* feedback qualitatif */
+const flash = ref(null) // 'good' | 'almost' | 'bad' | 'wrong' | null
+const lock = ref(false)
+
+/* restart */
+const restartOpen = ref(false)
+const customGoal = ref(DEFAULT_GOAL)
+
 const targetLabel = computed(() => currentSound.value?.label)
 
-const { isListening, lastLabel, lastConfidence, error, toggle, stop } = useBeatboxDetector({
+const { isListening, error, toggle, stop } = useBeatboxDetector({
   targetLabel,
-  threshold: 0.6,
-  onHit: () => {
-    if (done.value) return
-    current.value++
-    if (current.value >= GOAL) {
-      done.value = true
-      progress.markDone('02')
-      stop()
-    }
-  },
+  threshold: 0.1, // bas : on capte aussi les tentatives faibles / ratées
+  onHit: ({ label, confidence }) => classify(label, confidence),
 })
 
-const segs = computed(() =>
-  Array.from({ length: GOAL }, (_, i) => i < current.value)
-)
+/* ---------- CLASSIFICATION ---------- */
+function classify(label, confidence) {
+  if (done.value || lock.value) return
+
+  if (label !== targetLabel.value) return setFlash('wrong')
+  if (confidence < CONF_LOW) return setFlash('bad')
+  if (confidence < CONF_OK) return setFlash('almost')
+
+  // bien
+  setFlash('good')
+  current.value++
+  if (current.value >= goal.value) {
+    done.value = true
+    progress.markDone('02')
+    stop()
+  }
+}
+
+function setFlash(kind) {
+  flash.value = kind
+  lock.value = true
+  setTimeout(() => {
+    if (done.value) return
+    flash.value = null
+    lock.value = false
+  }, FEEDBACK_MS)
+}
+
+const feedback = computed(() => {
+  switch (flash.value) {
+    case 'good':   return { tone: 'good', icon: '✓', text: 'Nice!' }
+    case 'almost': return { tone: 'low',  icon: '~', text: 'Almost,make it cleaner' }
+    case 'bad':    return { tone: 'high', icon: '✕', text: 'Missed, try again' }
+    case 'wrong':  return { tone: 'high', icon: '✕', text: 'Wrong sound' }
+    default:       return { tone: 'idle', icon: '♪', text: 'Hit the sound' }
+  }
+})
+
+/* ---------- PROGRESS UI ---------- */
+const segs = computed(() => Array.from({ length: goal.value }, (_, i) => i < current.value))
 const pad = (n) => String(n).padStart(2, '0')
+
+/* ---------- RESTART ---------- */
+function applyRestart(nextGoal) {
+  goal.value = Math.min(99, Math.max(1, nextGoal))
+  current.value = 0
+  done.value = false
+  flash.value = null
+  lock.value = false
+  restartOpen.value = false
+  if (!isListening.value) toggle()
+}
+function restartDefault() { applyRestart(DEFAULT_GOAL) }
+function restartCustom() { applyRestart(customGoal.value || DEFAULT_GOAL) }
+function stepCustom(d) { customGoal.value = Math.min(99, Math.max(1, (customGoal.value || 0) + d)) }
 
 function skip() {
   stop()
@@ -42,7 +99,8 @@ function skip() {
 }
 
 onMounted(() => {
-  if (!currentSound.value) router.replace('/')
+  if (!currentSound.value) return router.replace('/')
+  if (!isListening.value) toggle() // mic activé par défaut
 })
 onBeforeUnmount(stop)
 </script>
@@ -89,7 +147,7 @@ onBeforeUnmount(stop)
           <div class="e02-counter">
             <span class="cur">{{ pad(current) }}</span>
             <span class="sep">/</span>
-            <span class="tgt">{{ pad(GOAL) }}</span>
+            <span class="tgt">{{ pad(goal) }}</span>
           </div>
 
           <div class="e02-bar">
@@ -105,15 +163,61 @@ onBeforeUnmount(stop)
               <BaseWaveform :bar-count="48" />
             </div>
 
-            <div v-if="done" class="e02-streak-badge">Exercise completed ✓</div>
-            <div v-else-if="error" class="e02-error">⚠ {{ error }}</div>
-            <div v-else-if="!isListening" class="e02-hint">
-              Activate the mic to start
+            <!-- DONE : pill + restart (DA exo03) -->
+            <template v-if="done">
+              <div class="e02-feedback-row">
+                <div class="e02-feedback-pill done">
+                  <span class="e02-feedback-icon">★</span>
+                  Exercise completed
+                </div>
+                <button class="e02-restart-btn" type="button" @click="restartOpen = !restartOpen">
+                  ↻ Restart
+                </button>
+              </div>
+
+              <div v-if="restartOpen" class="e02-restart-panel">
+                <div class="e02-restart-title">Choose your goal</div>
+                <div class="e02-restart-opts">
+                  <button class="e02-opt" type="button" @click="restartDefault">
+                    <span class="e02-opt-name">Default program</span>
+                    <span class="e02-opt-meta">{{ DEFAULT_GOAL }} sounds</span>
+                  </button>
+
+                  <div class="e02-opt custom">
+                    <span class="e02-opt-name">Custom goal</span>
+                    <div class="e02-opt-row">
+                      <button class="e02-step-btn" type="button" @click="stepCustom(-1)">−</button>
+                      <input
+                        class="e02-goal-input"
+                        type="number"
+                        min="1"
+                        max="99"
+                        v-model.number="customGoal"
+                      />
+                      <button class="e02-step-btn" type="button" @click="stepCustom(1)">+</button>
+                      <button class="e02-opt-go" type="button" @click="restartCustom">Go →</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- ERROR -->
+            <div v-else-if="error" class="e02-feedback-pill high">
+              <span class="e02-feedback-icon">⚠</span>
+              {{ error }}
             </div>
-            <div v-else class="e02-detect">
-              <span>detected:</span>
-              <em>{{ lastLabel || '—' }}</em>
-              <span class="conf">{{ (lastConfidence * 100).toFixed(0) }}%</span>
+
+            <!-- MIC OFF -->
+            <div v-else-if="!isListening" class="e02-feedback-pill idle">
+              <span class="e02-feedback-icon">♪</span>
+              Activate the mic
+            </div>
+
+            <!-- ACTIVE -->
+            <div v-else class="e02-feedback-pill" :class="feedback.tone">
+              <span class="e02-feedback-icon">{{ feedback.icon }}</span>
+              {{ feedback.text }}
             </div>
           </div>
         </div>
@@ -282,38 +386,141 @@ onBeforeUnmount(stop)
 }
 .e02-wave { width: 280px; }
 
-.e02-streak-badge {
-  background: var(--state-good);
-  color: var(--ink-0);
-  padding: 8px 16px;
-  border-radius: 2px;
+/* ---------- FEEDBACK PILL (DA exo03) ---------- */
+.e02-feedback-row { display: flex; align-items: center; gap: 12px; }
+.e02-feedback-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: var(--ls-tight);
   text-transform: uppercase;
-  animation: pulse 1.6s ease-in-out infinite;
+  padding: 10px 24px;
+  border-radius: 2px;
+  border: 2px solid transparent;
+  transition: all var(--dur-base) var(--ease-out-snap);
 }
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.04); }
-}
+.e02-feedback-icon { font-size: 13px; }
+.e02-feedback-pill.idle { background: var(--ink-3); color: var(--fg-muted); border-color: var(--line); }
+.e02-feedback-pill.low  { background: var(--orange-900); color: var(--orange-200); border-color: var(--orange-700); }
+.e02-feedback-pill.high { background: var(--state-bad); color: var(--ink-0); }
+.e02-feedback-pill.good { background: var(--state-good); color: var(--ink-0); animation: hit-pop var(--dur-stage) var(--ease-bounce); }
+.e02-feedback-pill.done { background: var(--brand); color: var(--fg-on-orange); animation: hit-pop var(--dur-stage) var(--ease-bounce); }
+@keyframes hit-pop { 0% { transform: scale(0.7); } 45% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
-/* detection feedback */
-.e02-hint,
-.e02-detect,
-.e02-error {
+/* ---------- RESTART (DA exo03) ---------- */
+.e02-restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--fg-primary);
+  border: 2px solid var(--brand);
+  padding: 10px 24px;
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.e02-restart-btn:hover { background: var(--brand); color: var(--fg-on-orange); }
+
+.e02-restart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface-card);
+  min-width: 420px;
+  max-width: 90vw;
+}
+.e02-restart-title {
   font-family: var(--font-mono);
-  font-size: var(--t-meta);
+  font-size: 10px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--fg-muted);
-  display: inline-flex;
-  gap: 8px;
-  align-items: baseline;
 }
-.e02-detect em { font-style: normal; color: var(--fg-primary); }
-.e02-detect .conf { color: var(--brand); }
-.e02-error { color: var(--state-bad); }
+.e02-restart-opts { display: flex; gap: 12px; }
+
+.e02-opt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+button.e02-opt:hover { border-color: var(--brand); }
+.e02-opt.custom { cursor: default; }
+.e02-opt-name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: var(--ls-tight);
+  text-transform: uppercase;
+  color: var(--fg-primary);
+}
+.e02-opt-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.e02-opt-row { display: flex; align-items: center; gap: 6px; }
+.e02-step-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
+}
+.e02-step-btn:hover { border-color: var(--brand); color: var(--brand); }
+.e02-goal-input {
+  width: 52px;
+  height: 30px;
+  text-align: center;
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -moz-appearance: textfield;
+}
+.e02-goal-input::-webkit-outer-spin-button,
+.e02-goal-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.e02-opt-go {
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 14px;
+  background: var(--brand);
+  border: none;
+  color: var(--fg-on-orange);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--dur-fast);
+}
+.e02-opt-go:hover { background: var(--brand-hover); }
 
 /* footer */
 .exo-footer {
