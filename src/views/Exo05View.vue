@@ -140,7 +140,7 @@ const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   onHit: () => {
     if (phase.value !== 'play' || !isRunning.value) return
     playerHits.value.push({ cell: playhead.value })
-    playSample()
+    // playSample() ← supprimée
   },
 })
 
@@ -238,19 +238,14 @@ let lastCell = -1
 
 function loop (now) {
   const elapsed = now - startTime
-
-  if (elapsed >= loopMs.value) {
-    finishRun()
-    return
-  }
+  if (elapsed >= loopMs.value) { finishRun(); return }
 
   playhead.value = (elapsed / loopMs.value) * BEATS.value
   const cell = Math.floor(playhead.value)
 
   if (cell !== lastCell) {
     lastCell = cell
-    const soundOn = phase.value === 'listen' ||
-                    (phase.value === 'play' && teacherGuide.value)
+    const soundOn = phase.value === 'listen'   // ← uniquement pendant l'écoute
     if (soundOn && teacherPattern.value.includes(cell)) playSample()
   }
 
