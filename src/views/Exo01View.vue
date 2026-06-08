@@ -360,7 +360,6 @@ onBeforeUnmount(() => {
     <!-- footer -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
-        <button class="footer-btn" type="button">↺ Review the demo</button>
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <BaseTips />
       </div>

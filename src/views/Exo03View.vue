@@ -8,6 +8,7 @@ import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
 import BaseTips from '@/components/footer/BaseTips.vue'
+import BaseReviewDemo from '@/components/footer/BaseReviewDemo.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
@@ -356,7 +357,7 @@ onBeforeUnmount(() => {
     <!-- footer -->
     <footer class="exo-footer">
       <div class="exo-footer-actions">
-        <button class="footer-btn" type="button">↺ Review the demo</button>
+        <BaseReviewDemo />
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
         <BaseTips />
       </div>
