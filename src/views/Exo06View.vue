@@ -41,26 +41,60 @@ const HISTORY_MAX = TOTAL_LOOPS
 const MAX_WARN = 1
 const MAX_BAD = 0
 
-const FILLERS = ['HH', 'HH', 'HH', 'SN', 'HH', 'SN', 'HH', 'HH']
+/* ---- Les 3 sons jouables ---- */
+const SOUNDS = {
+  kick:  { token: 'B', file: '/sounds/kick-drum-sound.wav' },
+  hihat: { token: 't', file: '/sounds/hi-hat-sound.wav' },
+  snare: { token: 'K', file: '/sounds/k-snare-outward-sound.wav' },
+}
 
+/* clé du son courant */
+function soundKey (s) {
+  const k = `${s?.name ?? ''} ${s?.label ?? ''}`.toLowerCase()
+  if (k.includes('hat')) return 'hihat'
+  if (k.includes('snare')) return 'snare'
+  return 'kick'
+}
+const currentKey = computed(() => soundKey(currentSound.value))
+
+/* ---- Grooves : 8 slots, 'YOU' = son appris, sinon filler (2 autres sons) ---- */
+const GROOVES = {
+  kick: {
+    easy:   ['hihat', 'hihat', 'snare', 'hihat', 'YOU',   'hihat', 'snare', 'hihat'],
+    medium: ['YOU',   'hihat', 'snare', 'hihat', 'YOU',   'hihat', 'snare', 'hihat'],
+    hard:   ['YOU',   'hihat', 'snare', 'YOU',   'hihat', 'snare', 'YOU',   'hihat'],
+  },
+  hihat: {
+    easy:   ['kick',  'kick',  'snare', 'kick',  'YOU',   'kick',  'snare', 'kick'],
+    medium: ['kick',  'YOU',   'snare', 'kick',  'kick',  'YOU',   'snare', 'kick'],
+    hard:   ['kick',  'YOU',   'snare', 'YOU',   'kick',  'kick',  'YOU',   'snare'],
+  },
+  snare: {
+    easy:   ['kick',  'hihat', 'YOU',   'hihat', 'kick',  'hihat', 'hihat', 'hihat'],
+    medium: ['kick',  'hihat', 'YOU',   'hihat', 'kick',  'hihat', 'YOU',   'hihat'],
+    hard:   ['kick',  'hihat', 'YOU',   'kick',  'YOU',   'hihat', 'YOU',   'kick'],
+  },
+}
+
+/* métadonnées difficulté (labels + nb de cibles pour les tooltips) */
 const PATTERNS = {
-  easy:   { label: 'Easy',   targets: [4] },
-  medium: { label: 'Medium', targets: [2, 6] },
-  hard:   { label: 'Hard',   targets: [1, 4, 6] },
+  easy:   { label: 'Easy',   count: 1 },
+  medium: { label: 'Medium', count: 2 },
+  hard:   { label: 'Hard',   count: 3 },
 }
 
 const difficulty = ref('easy')
-const targets = computed(() => PATTERNS[difficulty.value].targets)
+const layout = computed(() => GROOVES[currentKey.value][difficulty.value])
+const targets = computed(() =>
+  layout.value.reduce((acc, v, i) => (v === 'YOU' ? [...acc, i] : acc), [])
+)
 
-const slots = computed(() => {
-  const t = new Set(targets.value)
-  return Array.from({ length: SLOT_COUNT }, (_, i) => {
-    if (t.has(i)) return { i, kind: 'target', label: 'YOU' }
-    return { i, kind: 'coach', label: FILLERS[i] }
+const slots = computed(() =>
+  layout.value.map((v, i) => {
+    if (v === 'YOU') return { i, kind: 'target', label: 'YOU', sound: currentKey.value }
+    return { i, kind: 'coach', label: SOUNDS[v].token, sound: v }
   })
-})
-
-const SLOT_FREQ = { HH: 7200, SN: 320, YOU: 110 }
+)
 
 const slotAngle = (i) => (i / SLOT_COUNT) * 360
 const polar = (i, r = SLOT_RADIUS) => {
@@ -86,27 +120,56 @@ const slotStyle = (i) => {
   return { transform: `translate(${p.x - 44}px, ${p.y - 44}px)` }
 }
 
+/* ============================================================
+   AUDIO — samples réels
+   ============================================================ */
 let audioCtx = null
-function ensureCtx() {
+const buffers = {}
+
+function ensureCtx () {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)()
   }
   if (audioCtx.state === 'suspended') audioCtx.resume()
   return audioCtx
 }
-function playClick(freq = 440, dur = 0.06, type = 'square') {
+
+function trimSilence (buffer, threshold = 0.02) {
+  const data = buffer.getChannelData(0)
+  let start = 0
+  while (start < data.length && Math.abs(data[start]) < threshold) start++
+  if (start === 0) return buffer
   const ctx = ensureCtx()
-  const t = ctx.currentTime
-  const osc = ctx.createOscillator()
+  const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length - start, buffer.sampleRate)
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    out.getChannelData(ch).set(buffer.getChannelData(ch).subarray(start))
+  }
+  return out
+}
+
+async function loadSamples () {
+  const ctx = ensureCtx()
+  await Promise.all(Object.entries(SOUNDS).map(async ([key, s]) => {
+    try {
+      const res = await fetch(s.file)
+      const arr = await res.arrayBuffer()
+      buffers[key] = trimSilence(await ctx.decodeAudioData(arr))
+    } catch (e) {
+      buffers[key] = null
+    }
+  }))
+}
+
+function playSample (key, gainVal = 0.9) {
+  const ctx = ensureCtx()
+  const buf = buffers[key]
+  if (!buf) return
+  const src = ctx.createBufferSource()
+  src.buffer = buf
   const gain = ctx.createGain()
-  osc.type = type
-  osc.frequency.setValueAtTime(freq, t)
-  gain.gain.setValueAtTime(0.0001, t)
-  gain.gain.exponentialRampToValueAtTime(0.4, t + 0.005)
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  osc.connect(gain).connect(ctx.destination)
-  osc.start(t)
-  osc.stop(t + dur + 0.02)
+  gain.gain.value = gainVal
+  src.connect(gain).connect(ctx.destination)
+  src.start()
 }
 
 const mode = ref('pause')
@@ -154,16 +217,14 @@ const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   },
 })
 
-function crossSlot(i) {
+function crossSlot (i) {
   const s = slots.value[i]
   litSlot.value = i
   setTimeout(() => { if (litSlot.value === i) litSlot.value = null }, 110)
-  if (s.kind === 'coach') {
-    playClick(SLOT_FREQ[s.label], 0.05, s.label === 'HH' ? 'highpass' : 'square')
-  }
+  if (s.kind === 'coach') playSample(s.sound, 0.55)
 }
 
-function nextTargetAhead(a) {
+function nextTargetAhead (a) {
   const sorted = [...targets.value].sort((x, y) => x - y)
   for (const i of sorted) {
     if (hitTargets.has(i)) continue
@@ -172,11 +233,11 @@ function nextTargetAhead(a) {
   return null
 }
 
-function clearSlotFeedback() {
+function clearSlotFeedback () {
   for (const k of Object.keys(slotFeedback)) delete slotFeedback[k]
 }
 
-function resetSession() {
+function resetSession () {
   history.value = []
   loopCount.value = 0
   streak.value = 0
@@ -193,7 +254,7 @@ function resetSession() {
   isNewBest.value = false
 }
 
-function finishLoop() {
+function finishLoop () {
   const missed = targets.value.length - hitTargets.size
   loopHitsBad += missed
 
@@ -216,7 +277,7 @@ function finishLoop() {
   clearSlotFeedback()
 }
 
-function finishSession() {
+function finishSession () {
   status.value = 'done'
 
   const key = bestKey(difficulty.value, playedMode.value)
@@ -239,7 +300,7 @@ function finishSession() {
   }
 }
 
-function tick(ts) {
+function tick (ts) {
   if (!lastTs) lastTs = ts
   const dt = ts - lastTs
   lastTs = ts
@@ -281,7 +342,7 @@ function tick(ts) {
   rafId = requestAnimationFrame(tick)
 }
 
-function startCountdown() {
+function startCountdown () {
   if (status.value === 'running' || status.value === 'countdown') return
   resetSession()
   playedMode.value = mode.value
@@ -290,7 +351,7 @@ function startCountdown() {
   statusText.value = ''
   countdownEl.value.start()
 }
-function onCountdownDone() {
+function onCountdownDone () {
   status.value = 'running'
   lastTs = 0
 }
@@ -298,19 +359,19 @@ function onCountdownDone() {
 /* ---- Confirmation avant Start ---- */
 const confirmOpen = ref(false)
 
-function requestStart() {
+function requestStart () {
   if (status.value === 'running' || status.value === 'countdown') return
   confirmOpen.value = true
 }
-function cancelConfirm() {
+function cancelConfirm () {
   confirmOpen.value = false
 }
-function confirmStart() {
+function confirmStart () {
   confirmOpen.value = false
   startCountdown()
 }
 
-function restart() {
+function restart () {
   status.value = 'idle'
   statusKind.value = 'idle'
   statusText.value = ''
@@ -318,7 +379,7 @@ function restart() {
   requestStart()
 }
 
-function stopSession() {
+function stopSession () {
   status.value = 'idle'
   statusKind.value = 'idle'
   statusText.value = ''
@@ -326,7 +387,7 @@ function stopSession() {
   if (countdownEl.value?.cancel) countdownEl.value.cancel()
 }
 
-function registerHit() {
+function registerHit () {
   if (status.value !== 'running') return
 
   let bestI = -1
@@ -338,7 +399,7 @@ function registerHit() {
   }
   if (bestI === -1) return
 
-  playClick(SLOT_FREQ.YOU, 0.09, 'sine')
+  playSample(currentKey.value)
 
   if (bestDist <= HIT_WINDOW_DEG) {
     hitTargets.add(bestI)
@@ -368,14 +429,14 @@ function registerHit() {
 }
 
 /* espace conservé en debug / fallback */
-function onKey(e) {
+function onKey (e) {
   if (e.code !== 'Space') return
   e.preventDefault()
   if (status.value === 'idle' || status.value === 'done') requestStart()
   else registerHit()
 }
 
-function setDifficulty(key) {
+function setDifficulty (key) {
   if (difficulty.value === key) return
   difficulty.value = key
   status.value = 'idle'
@@ -385,7 +446,7 @@ function setDifficulty(key) {
   resetSession()
 }
 
-function skip() {
+function skip () {
   cancelAnimationFrame(rafId)
   stopMic()
   if (audioCtx) {
@@ -397,8 +458,8 @@ function skip() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKey)
+  loadSamples()
   rafId = requestAnimationFrame(tick)
-  // Micro actif par défaut (déclenche la demande de permission au montage)
   if (!isListening.value) toggleMic()
 })
 onUnmounted(() => {
