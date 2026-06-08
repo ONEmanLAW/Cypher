@@ -4,12 +4,13 @@ import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 
 // Footer
 import BaseTips from '@/components/footer/BaseTips.vue'
 import BaseReviewDemo from '@/components/footer/BaseReviewDemo.vue'
 import BaseListenSound from '@/components/footer/BaseListenSound.vue'
+
 const router = useRouter()
 const progress = useProgressStore()
 const { goToNext } = useExoNavigation()
@@ -27,24 +28,9 @@ const TOL_GOOD = 0.6
 const TOL_WARN = 1.3
 
 const PATTERNS = {
-  easy: {
-    label: 'Easy',
-    cells: 16,
-    bpm: 60,
-    kicks: [2, 5, 6, 8, 12, 14]
-  },
-  medium: {
-    label: 'Medium',
-    cells: 22,
-    bpm: 60,
-    kicks: [2, 3, 5, 7, 8, 10, 13, 15, 17, 18, 19]
-  },
-  hard: {
-    label: 'Hard',
-    cells: 28,
-    bpm: 60,
-    kicks: [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 15, 16, 18, 20, 21, 23, 24, 25]
-  }
+  easy:   { label: 'Easy',   cells: 16, bpm: 60, kicks: [2, 5, 6, 8, 12, 14] },
+  medium: { label: 'Medium', cells: 22, bpm: 60, kicks: [2, 3, 5, 7, 8, 10, 13, 15, 17, 18, 19] },
+  hard:   { label: 'Hard',   cells: 28, bpm: 60, kicks: [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 15, 16, 18, 20, 21, 23, 24, 25] }
 }
 
 const difficulty = ref('easy')
@@ -154,11 +140,29 @@ const { isListening, toggle: toggleMic, stop: stopMic } = useBeatboxDetector({
   onHit: () => {
     if (phase.value !== 'play' || !isRunning.value) return
     playerHits.value.push({ cell: playhead.value })
-    playKick()
+    playSample()
   },
 })
 
+/* ============================================================
+   AUDIO — sample du son courant (remplace le kick synthé)
+   ============================================================ */
+
+const SOUND_FILES = {
+  kick:  '/sounds/kick-drum-sound.wav',
+  hihat: '/sounds/hi-hat-sound.wav',
+  snare: '/sounds/k-snare-outward-sound.wav',
+}
+
+function resolveSoundFile (sound) {
+  const key = `${sound?.name ?? ''} ${sound?.label ?? ''}`.toLowerCase()
+  if (key.includes('hat')) return SOUND_FILES.hihat
+  if (key.includes('snare')) return SOUND_FILES.snare
+  return SOUND_FILES.kick
+}
+
 let audioCtx = null
+const sampleBuffer = ref(null)
 
 function ensureCtx () {
   if (!audioCtx) {
@@ -168,17 +172,61 @@ function ensureCtx () {
   return audioCtx
 }
 
+function trimSilence (buffer, threshold = 0.02) {
+  const data = buffer.getChannelData(0)
+  let start = 0
+  while (start < data.length && Math.abs(data[start]) < threshold) start++
+  if (start === 0) return buffer
+
+  const ctx = ensureCtx()
+  const trimmed = ctx.createBuffer(
+    buffer.numberOfChannels,
+    buffer.length - start,
+    buffer.sampleRate
+  )
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    trimmed.getChannelData(ch).set(buffer.getChannelData(ch).subarray(start))
+  }
+  return trimmed
+}
+
+async function loadSample () {
+  const ctx = ensureCtx()
+  const url = resolveSoundFile(currentSound.value)
+  try {
+    const res = await fetch(url)
+    const arr = await res.arrayBuffer()
+    const decoded = await ctx.decodeAudioData(arr)
+    sampleBuffer.value = trimSilence(decoded)   // ← trim ici
+  } catch (e) {
+    sampleBuffer.value = null
+  }
+}
+
+function playSample () {
+  const ctx = ensureCtx()
+  if (sampleBuffer.value) {
+    const src = ctx.createBufferSource()
+    src.buffer = sampleBuffer.value
+    const gain = ctx.createGain()
+    gain.gain.value = 0.9
+    src.connect(gain).connect(ctx.destination)
+    src.start()
+  } else {
+    playKick() // fallback si le fichier n'a pas chargé
+  }
+}
+
+/* fallback synthé conservé au cas où */
 function playKick () {
   const ctx = ensureCtx()
   const t = ctx.currentTime
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
-
   osc.frequency.setValueAtTime(160, t)
   osc.frequency.exponentialRampToValueAtTime(50, t + 0.12)
   gain.gain.setValueAtTime(0.6, t)
   gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18)
-
   osc.connect(gain).connect(ctx.destination)
   osc.start(t)
   osc.stop(t + 0.2)
@@ -203,7 +251,7 @@ function loop (now) {
     lastCell = cell
     const soundOn = phase.value === 'listen' ||
                     (phase.value === 'play' && teacherGuide.value)
-    if (soundOn && teacherPattern.value.includes(cell)) playKick()
+    if (soundOn && teacherPattern.value.includes(cell)) playSample()
   }
 
   rafId = requestAnimationFrame(loop)
@@ -292,12 +340,15 @@ function onKeydown (e) {
   e.preventDefault()
   if (phase.value !== 'play' || !isRunning.value) return
   playerHits.value.push({ cell: playhead.value })
-  playKick()
+  playSample()
 }
+
+/* recharge le sample si le son courant change */
+watch(currentSound, () => loadSample())
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  // Micro actif par défaut (déclenche la demande de permission au montage)
+  loadSample()
   if (!isListening.value) toggleMic()
 })
 onBeforeUnmount(() => {
