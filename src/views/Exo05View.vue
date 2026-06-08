@@ -5,7 +5,7 @@ import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import BaseTips from '@/components/ui/BaseTips.vue'
+import BaseTips from '@/components/footer/BaseTips.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
