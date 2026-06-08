@@ -19,9 +19,9 @@ export const SECTIONS = [
    SONS — catalogue
    ============================================================ */
 export const SOUNDS = [
-  { id: 'kick',  n: '01', name: 'Kick Drum', sub: 'the foot kick · the base.', label: 'Kick Drums',    unlocked: true },
-  { id: 'hihat', n: '02', name: 'Hi-Hat',    sub: 'ts · ts · ts.',             label: 'Hi-hat',         unlocked: true },
-  { id: 'snare', n: '03', name: 'Snare',     sub: 'the central snap.',         label: 'K Snare inward', unlocked: true },
+  { id: 'kick',  n: '01', name: 'Kick Drum', sub: 'the foot kick · the base.', label: 'Kick Drums',    unlocked: true, tips: '/tips/kick-drum.pdf' },
+  { id: 'hihat', n: '02', name: 'Hi-Hat',    sub: 'ts · ts · ts.',             label: 'Hi-hat',         unlocked: true, tips: null /* '/tips/hi-hat.pdf' */ },
+  { id: 'snare', n: '03', name: 'Snare',     sub: 'the central snap.',         label: 'K Snare inward', unlocked: true, tips: null /* '/tips/k-snare-outward.pdf' */ },
 ]
 
 const EXO_IDS = ['01', '02', '03', '04', '05', '06']

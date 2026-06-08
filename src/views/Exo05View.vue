@@ -5,6 +5,7 @@ import { useProgressStore } from '@/stores/progress'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import BaseTips from '@/components/ui/BaseTips.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
@@ -591,7 +592,7 @@ const callLabel = computed(() =>
         <button class="footer-btn" type="button" @click="playKick">
           ♪ Listen to the sound
         </button>
-        <button class="footer-btn" type="button">ⓘ Tips</button>
+        <BaseTips />
       </div>
       <div class="exo-footer-actions">
         <button

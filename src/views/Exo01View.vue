@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useExoNavigation } from '@/composables/useExoNavigation'
+import BaseTips from '@/components/ui/BaseTips.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
@@ -361,7 +362,7 @@ onBeforeUnmount(() => {
       <div class="exo-footer-actions">
         <button class="footer-btn" type="button">↺ Review the demo</button>
         <button class="footer-btn" type="button">♪ Listen to the sound</button>
-        <button class="footer-btn" type="button">ⓘ Tips</button>
+        <BaseTips />
       </div>
       <div class="exo-footer-actions">
         <span class="footer-mic"><span class="dot" /> Mic on</span>
