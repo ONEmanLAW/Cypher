@@ -61,8 +61,8 @@ const currentKey = computed(() => soundKey(currentSound.value))
 const GROOVES = {
   kick: {
     easy:   ['hihat', 'hihat', 'snare', 'hihat', 'YOU',   'hihat', 'snare', 'hihat'],
-    medium: ['YOU',   'hihat', 'snare', 'hihat', 'YOU',   'hihat', 'snare', 'hihat'],
-    hard:   ['YOU',   'hihat', 'snare', 'YOU',   'hihat', 'snare', 'YOU',   'hihat'],
+    medium: ['hihat', 'YOU', 'snare', 'hihat', 'YOU',   'hihat', 'snare',   'hihat'],
+    hard:   ['hihat', 'YOU', 'snare',   'hihat', 'YOU', 'YOU','snare','hihat'],
   },
   hihat: {
     easy:   ['kick',  'kick',  'snare', 'kick',  'YOU',   'kick',  'snare', 'kick'],
@@ -398,8 +398,6 @@ function registerHit () {
     if (d < bestDist) { bestDist = d; bestI = i }
   }
   if (bestI === -1) return
-
-  playSample(currentKey.value)
 
   if (bestDist <= HIT_WINDOW_DEG) {
     hitTargets.add(bestI)
