@@ -567,6 +567,7 @@ button.e02-opt:hover { border-color: var(--brand); }
   color: var(--fg-primary);
   font-family: var(--font-mono);
   font-size: 13px;
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 .e02-goal-input::-webkit-outer-spin-button,
