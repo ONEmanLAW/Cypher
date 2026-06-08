@@ -6,20 +6,32 @@ import { useProgressStore, SECTIONS } from '@/stores/progress'
 const router = useRouter()
 const progress = useProgressStore()
 
-const sections = computed(() =>
-  SECTIONS.map((s) => {
+const sections = computed(() => {
+  let prevDone = true // 1ʳᵉ section toujours ouverte
+
+  return SECTIONS.map((s) => {
     const masteredSounds = progress.sectionDoneCount(s.id)
     const startedExos = s.soundIds.reduce((n, id) => n + progress.doneCountFor(id), 0)
-    const clickable = s.soundIds.length > 0
+    const isComplete = s.soundCount > 0 && masteredSounds === s.soundCount
 
+    const unlocked = prevDone
     let state
-    if (s.soundCount > 0 && masteredSounds === s.soundCount) state = 'done' // terminé → sombre
-    else if (startedExos > 0) state = 'current'                             // commencé → orange
-    else state = 'avail'                                                    // non touché → blanc
+    if (!unlocked) state = 'locked'
+    else if (isComplete) state = 'done'        // terminé → sombre
+    else if (startedExos > 0) state = 'current' // commencé → orange
+    else state = 'avail'                        // dispo, non touché → blanc
 
-    return { ...s, state, clickable, done: masteredSounds, total: s.soundCount }
+    prevDone = isComplete // la suivante n'ouvre que si celle-ci est finie
+
+    return {
+      ...s,
+      state,
+      clickable: unlocked && s.soundIds.length > 0,
+      done: masteredSounds,
+      total: s.soundCount,
+    }
   })
-)
+})
 
 const completedCount = computed(() => sections.value.filter((s) => s.state === 'done').length)
 const totalCount = SECTIONS.length
@@ -28,6 +40,7 @@ const STATE_PILL = {
   done:    'Done',
   current: 'In progress',
   avail:   'Available',
+  locked:  'Locked',
 }
 
 /* Pilote la vitesse du vinyle sans saut : on change le playbackRate de
@@ -128,7 +141,11 @@ function goBack() {
             <!-- PILL -->
             <div class="card-pill-wrap">
               <span class="pill" :class="s.state">
-                <span class="pill-dot" />
+                <svg v-if="s.state === 'locked'" class="pill-lock" viewBox="0 0 24 24" fill="none">
+                  <rect x="5" y="11" width="14" height="9" rx="1" stroke="currentColor" stroke-width="2.5" />
+                  <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2.5" />
+                </svg>
+                <span v-else class="pill-dot" />
                 {{ STATE_PILL[s.state] }}
               </span>
             </div>
@@ -337,6 +354,21 @@ function goBack() {
   border-color: var(--brand);
 }
 
+/* --- Carte verrouillée : éteinte, vinyle figé --- */
+.card.locked {
+  background: var(--ink-2);
+  color: var(--fg-muted);
+  border-color: var(--line);
+}
+.card.locked .card-name { color: var(--ink-6); }
+.card.locked .card-num  { opacity: 0.45; }
+.card.locked .vinyl {
+  opacity: 0.2;
+  filter: grayscale(1);
+  animation: none; /* pas de rotation tant que verrouillé */
+}
+.card.locked .card-foot { border-top-color: var(--ink-4); opacity: 0.6; }
+
 .card:not(:disabled):hover {
   border-color: var(--brand);
   transform: translateY(-2px);
@@ -366,6 +398,7 @@ function goBack() {
   height: 6px;
   background: currentColor;
 }
+.pill-lock { width: 9px; height: 9px; }
 .pill.done,
 .pill.current {
   background: var(--ink-0);
@@ -378,6 +411,11 @@ function goBack() {
   background: transparent;
   color: var(--ink-1);
   border-color: var(--ink-1);
+}
+.pill.locked {
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: var(--line);
 }
 
 /* ============ NUM ============ */
