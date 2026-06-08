@@ -40,7 +40,12 @@ onBeforeUnmount(() => {
     :disabled="!soundUrl"
     @click="play"
   >
-    ♪ Listen to the sound
+    <!-- repos : note · lecture : égaliseur animé -->
+    <span v-if="!playing" class="note">♪</span>
+    <span v-else class="eq">
+      <span></span><span></span><span></span>
+    </span>
+    Listen to the sound
   </button>
 </template>
 
@@ -64,4 +69,32 @@ onBeforeUnmount(() => {
 .footer-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--fg-primary); }
 .footer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .footer-btn.playing { border-color: var(--brand); color: var(--brand); }
+
+.note { font-size: 13px; line-height: 1; }
+
+/* égaliseur : 3 barres animées pendant la lecture */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+}
+.eq span {
+  width: 2px;
+  height: 4px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: eq-bounce 0.7s var(--ease-out-soft) infinite;
+}
+.eq span:nth-child(2) { animation-delay: 0.15s; }
+.eq span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes eq-bounce {
+  0%, 100% { height: 4px; }
+  50%      { height: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq span { animation: none; height: 8px; }
+}
 </style>
