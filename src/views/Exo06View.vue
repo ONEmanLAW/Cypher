@@ -5,8 +5,11 @@ import Countdown from '@/components/ui/BaseCountdown.vue'
 import { useProgressStore } from '@/stores/progress'
 import { useExoNavigation } from '@/composables/useExoNavigation'
 import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
+
+//Footer
 import BaseTips from '@/components/footer/BaseTips.vue'
 import BaseReviewDemo from '@/components/footer/BaseReviewDemo.vue'
+import BaseListenSound from '@/components/footer/BaseListenSound.vue'
 
 const router = useRouter()
 const progress = useProgressStore()
@@ -640,7 +643,7 @@ onUnmounted(() => {
     <footer class="exo-footer">
       <div class="exo-footer-actions">
         <BaseReviewDemo />
-        <button class="footer-btn" type="button">♪ Listen to the sound</button>
+        <BaseListenSound />
         <BaseTips />
       </div>
       <div class="exo-footer-actions">
