@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useProgressStore, SECTIONS } from '@/stores/progress'
+import { useVinylTransition } from '@/composables/useVinylTransition'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { go } = useVinylTransition(router)
 
 const sections = computed(() => {
   let prevDone = true // 1ʳᵉ section toujours ouverte
@@ -54,7 +56,7 @@ function setVinylSpeed(e, rate) {
 function selectSection(s) {
   if (!s.clickable) return
   progress.setCurrentSection(s.id)
-  router.push('/sounds')
+  go('/sounds')
 }
 
 function goBack() {

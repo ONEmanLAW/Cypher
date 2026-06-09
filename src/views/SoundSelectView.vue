@@ -3,9 +3,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useProgressStore, SOUNDS } from '@/stores/progress'
+import { useVinylTransition } from '@/composables/useVinylTransition'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { go } = useVinylTransition(router)
 
 const currentSection = computed(() => progress.currentSection)
 
@@ -41,7 +43,7 @@ function setVinylSpeed(e, rate) {
 function selectSound(sound) {
   if (!sound.unlocked) return
   progress.setCurrentSound(sound.id)
-  router.push('/exercises')
+  go('/exercises')
 }
 
 function goBack() {
