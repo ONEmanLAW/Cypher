@@ -179,11 +179,11 @@ function continueAfterTry() {
 }
 
 /* ============================================================
-   TIMELINE NAVIGATION
+   TIMELINE NAVIGATION — toutes les phases sont navigables
    ============================================================ */
 function goToPhase(idx) {
-  if (!visitedPhases.value.has(idx)) return
   if (!videoRef.value) return
+  hasStarted.value = true
   videoRef.value.currentTime = phases.value[idx].start
   const phase = phases.value[idx]
   if (phase.essai) {
@@ -324,9 +324,8 @@ onBeforeUnmount(() => {
             <button
               v-for="p in phasesWithLayout"
               :key="p.idx"
-              :class="['e01-phase', p.state, { locked: !visitedPhases.has(p.idx), essai: p.essai }]"
+              :class="['e01-phase', p.state, { essai: p.essai }]"
               :style="{ flexBasis: p.width + '%' }"
-              :disabled="!visitedPhases.has(p.idx)"
               type="button"
               @click="goToPhase(p.idx)"
             >
@@ -648,19 +647,16 @@ onBeforeUnmount(() => {
   transition: border-color var(--dur-fast), background-color var(--dur-fast);
   min-width: 0;
 }
-.e01-phase:hover:not(:disabled) { border-color: var(--line-hover); }
-.e01-phase.locked,
-.e01-phase:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.e01-phase:hover { border-color: var(--line-hover); }
 .e01-phase.done { border-color: var(--line); }
+
+/* phase courante : border orange net (lisible, sert aussi de bouton) */
 .e01-phase.curr {
-  background: var(--brand);
   border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  background: var(--ink-2);
 }
-.e01-phase.curr .e01-phase-name,
-.e01-phase.curr .e01-phase-time { color: var(--fg-on-orange); }
+.e01-phase.curr .e01-phase-name { color: var(--brand); }
 
 .e01-phase-name {
   font-family: var(--font-display);
@@ -688,8 +684,8 @@ onBeforeUnmount(() => {
 }
 .e01-phase-dot.done { background: var(--state-good); }
 .e01-phase-dot.curr {
-  background: var(--bone-0);
-  box-shadow: 0 0 8px 0 var(--bone-0);
+  background: var(--brand);
+  box-shadow: 0 0 8px 0 var(--brand);
 }
 
 .e01-essai-panel {
