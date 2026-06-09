@@ -1,10 +1,15 @@
 <script setup>
-import VinylTransition from '@/components/VinylTransition.vue'
+import VinylOverlay from '@/components/VinylOverlay.vue'
+import PanelOverlay from '@/components/PanelOverlay.vue'
 </script>
 
 <template>
-  <RouterView />
-  <VinylTransition />
-</template>
+  <RouterView v-slot="{ Component }">
+    <Transition name="page">
+      <component :is="Component" :key="$route.path" />
+    </Transition>
+  </RouterView>
 
-<style scoped></style>
+  <VinylOverlay />
+  <PanelOverlay />
+</template>

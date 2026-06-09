@@ -1,0 +1,4 @@
+/* Fade appliqué à chaque changement de route (bouton Back, logo, etc.) */
+.page-enter-active { transition: opacity 0.5s var(--ease-out-soft); }
+.page-enter-from   { opacity: 0; }
+.page-leave-active { display: none; } /* l'ancienne vue part net (cachée par l'overlay si présent) */

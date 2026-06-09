@@ -1,6 +1,5 @@
 import { ref } from 'vue'
 
-// refs module-level → partagées entre l'overlay (App.vue) et les vues
 const active = ref(false)
 const phase = ref('idle') // 'idle' | 'cover' | 'reveal'
 
@@ -10,13 +9,12 @@ export function useVinylTransition(router) {
   async function go(to) {
     active.value = true
     phase.value = 'cover'
-    await wait(420) // le disque couvre l'écran
-    if (router) await router.push(to) // swap de route caché derrière
+    await wait(420)
     phase.value = 'reveal'
-    await wait(420) // le disque se retire
+    if (router) await router.push(to)
+    await wait(420)
     active.value = false
     phase.value = 'idle'
   }
-
   return { active, phase, go }
 }

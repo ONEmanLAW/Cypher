@@ -27,7 +27,6 @@ const { active, phase } = useVinylTransition()
   pointer-events: none;
   overflow: hidden;
 }
-/* grain par-dessus le disque, dans l'esprit du DS */
 .veil::after {
   content: '';
   position: absolute;
@@ -48,23 +47,12 @@ const { active, phase } = useVinylTransition()
     inset 0 0 0 1px rgba(255, 255, 255, 0.04),
     inset 0 0 120px rgba(0, 0, 0, 0.7);
 }
-.veil.cover .disc {
-  animation: disc-in var(--dur-slow) var(--ease-out-snap) forwards;
-}
-.veil.reveal .disc {
-  animation: disc-out var(--dur-slow) var(--ease-in-quick) forwards;
-}
+.veil.cover .disc  { animation: disc-in  var(--dur-slow) var(--ease-out-snap) forwards; }
+.veil.reveal .disc { animation: disc-out var(--dur-slow) var(--ease-in-quick) forwards; }
 
-@keyframes disc-in {
-  from { transform: scale(0); }
-  to   { transform: scale(1); }
-}
-@keyframes disc-out {
-  from { transform: scale(1); }
-  to   { transform: scale(0); }
-}
+@keyframes disc-in  { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes disc-out { from { transform: scale(1); } to { transform: scale(0); } }
 
-/* rotation continue, séparée du scale */
 .disc-spin {
   position: absolute;
   inset: 6%;
@@ -117,10 +105,7 @@ const { active, phase } = useVinylTransition()
   border-radius: var(--r-pill);
   background: var(--ink-0);
 }
-
-@keyframes vinyl-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes vinyl-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
   .disc-spin { animation: none; }

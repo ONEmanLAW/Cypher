@@ -3,9 +3,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useProgressStore, SECTIONS } from '@/stores/progress'
+import { usePanelTransition } from '@/composables/usePanelTransition'
 
 const router = useRouter()
 const progress = useProgressStore()
+const { enterPanel } = usePanelTransition(router)
 
 /* ---- progression Académie (réelle, dérivée du store) ---- */
 const totalSounds = computed(() =>
@@ -34,8 +36,8 @@ const campaignLevel = 3
 const campaignTotal = 10
 const campaignProgress = campaignLevel / campaignTotal
 
-function enterAcademy() {
-  router.push('/sections')
+function enterAcademy(e) {
+  enterPanel('/sections', e.currentTarget, 'ACADEMY')
 }
 </script>
 
