@@ -1,6 +1,9 @@
 <script setup>
 import VinylOverlay from '@/components/VinylOverlay.vue'
 import PanelOverlay from '@/components/PanelOverlay.vue'
+import { useFullscreen } from '@/composables/useFullscreen'
+
+useFullscreen({ hotkey: 'f' })
 </script>
 
 <template>
