@@ -1,6 +1,6 @@
 <!-- views/SoundSelectView.vue -->
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useProgressStore, SOUNDS } from '@/stores/progress'
 import { useVinylTransition } from '@/composables/useVinylTransition'
@@ -31,6 +31,30 @@ const STATE_PILL = {
   avail:   'Available',
   locked:  'Locked',
 }
+
+/* ---------- PREVIEW AUDIO (source = store : sound.sound) ---------- */
+const playingId = ref(null)
+let previewAudio = null
+
+function stopPreview() {
+  previewAudio?.pause()
+  if (previewAudio) previewAudio.currentTime = 0
+  playingId.value = null
+}
+
+/* actif meme si verrouille : laisse ecouter ce qu'on va debloquer */
+function playPreview(sound) {
+  if (playingId.value === sound.id) return stopPreview()
+  stopPreview()
+  previewAudio = new Audio(sound.sound)
+  previewAudio.addEventListener('ended', () => {
+    if (playingId.value === sound.id) playingId.value = null
+  })
+  previewAudio.play().catch(() => (playingId.value = null))
+  playingId.value = sound.id
+}
+
+onUnmounted(stopPreview)
 
 /* Pilote la vitesse du vinyle sans saut : on change le playbackRate de
    l'animation en cours, qui continue depuis l'angle courant. */
@@ -65,7 +89,7 @@ function goBack() {
         </button>
 
         <span v-if="currentSection" class="nav-section">
-          Section · <em>{{ currentSection.name }}</em>
+          Section &middot; <em>{{ currentSection.name }}</em>
         </span>
       </div>
 
@@ -113,50 +137,68 @@ function goBack() {
 
       <section class="grid-wrap">
         <section class="grid">
-          <button
+          <div
             v-for="s in sounds"
             :key="s.id"
-            type="button"
-            class="card"
-            :class="[s.state]"
-            :disabled="!s.unlocked"
-            @click="selectSound(s)"
-            @mouseenter="setVinylSpeed($event, 3.2)"
-            @mouseleave="setVinylSpeed($event, 1)"
+            class="card-slot"
           >
-            <!-- VINYLE -->
-            <div class="vinyl">
-              <div class="vinyl-grooves" />
-              <div class="vinyl-shine" />
-              <div class="vinyl-center">
-                <div class="vinyl-hole" />
-              </div>
-            </div>
-
-            <!-- pill -->
-            <div class="card-pill-wrap">
-              <span class="pill" :class="s.state">
-                <span class="pill-dot" />
-                {{ STATE_PILL[s.state] }}
-              </span>
-            </div>
-
-            <!-- nom -->
-            <div class="card-text">
-              <div class="card-name">{{ s.name }}</div>
-            </div>
-
-            <!-- footer -->
-            <div class="card-foot">
-              <div class="card-exos">
-                <span class="card-exos-label">Exos · {{ s.exos }}/{{ s.total }}</span>
-                <div class="card-bars">
-                  <span v-for="i in s.total" :key="i"
-                        :class="{ fill: i <= s.exos }" />
+            <button
+              type="button"
+              class="card"
+              :class="[s.state]"
+              :disabled="!s.unlocked"
+              @click="selectSound(s)"
+              @mouseenter="setVinylSpeed($event, 3.2)"
+              @mouseleave="setVinylSpeed($event, 1)"
+            >
+              <!-- VINYLE -->
+              <div class="vinyl">
+                <div class="vinyl-grooves" />
+                <div class="vinyl-shine" />
+                <div class="vinyl-center">
+                  <div class="vinyl-hole" />
                 </div>
               </div>
-            </div>
-          </button>
+
+              <!-- pill -->
+              <div class="card-pill-wrap">
+                <span class="pill" :class="s.state">
+                  <span class="pill-dot" />
+                  {{ STATE_PILL[s.state] }}
+                </span>
+              </div>
+
+              <!-- nom -->
+              <div class="card-text">
+                <div class="card-name">{{ s.name }}</div>
+              </div>
+
+              <!-- footer -->
+              <div class="card-foot">
+                <div class="card-exos">
+                  <span class="card-exos-label">Exos &middot; {{ s.exos }}/{{ s.total }}</span>
+                  <div class="card-bars">
+                    <span v-for="i in s.total" :key="i"
+                          :class="{ fill: i <= s.exos }" />
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            <!-- PREVIEW · vrai bouton, hors de la carte (HTML valide) -->
+            <button
+              type="button"
+              class="preview-btn"
+              :class="[s.state, { playing: playingId === s.id }]"
+              :aria-label="`Ecouter ${s.name}`"
+              @click="playPreview(s)"
+            >
+              <span v-if="playingId === s.id" class="eq"><i /><i /><i /></span>
+              <svg v-else viewBox="0 0 10 12" fill="currentColor">
+                <path d="M1 1l8 5-8 5z" />
+              </svg>
+            </button>
+          </div>
         </section>
       </section>
     </div>
@@ -319,6 +361,9 @@ function goBack() {
   width: 100%;
 }
 
+/* le slot porte le positionnement ; la carte garde son hover/transform */
+.card-slot { position: relative; }
+
 /* ============ CARD ============ */
 .card {
   position: relative;
@@ -331,6 +376,7 @@ function goBack() {
   color: var(--fg-primary);
   cursor: pointer;
   overflow: hidden;
+  width: 100%;
   height: clamp(280px, 38vh, 360px);
   transition:
     border-color var(--dur-base) var(--ease-out-snap),
@@ -362,6 +408,78 @@ function goBack() {
   transform: translateY(-2px);
 }
 .card.locked { opacity: 0.55; }
+
+/* ============ PREVIEW BTN ============ */
+.preview-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-0);
+  color: var(--fg-primary);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out-snap),
+    color var(--dur-fast) var(--ease-out-snap),
+    transform var(--dur-fast) var(--ease-out-snap);
+}
+.preview-btn svg { width: 10px; height: 12px; }
+.preview-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+  transform: scale(1.06);
+}
+
+/* contraste sur cartes claires (avail / locked) */
+.preview-btn.avail,
+.preview-btn.locked {
+  background: var(--bone-0);
+  color: var(--ink-1);
+  border-color: var(--ink-1);
+}
+
+/* etat lecture -> orange brand (--audio-recording) + glow du design system */
+.preview-btn.playing {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--ink-0);
+  box-shadow: var(--shadow-glow);
+}
+/* sur la carte courante (deja orange) : on inverse pour rester lisible */
+.preview-btn.current.playing {
+  border-color: var(--brand);
+  color: var(--fg-on-orange);
+  background: var(--brand);
+  box-shadow: var(--shadow-glow);
+}
+
+/* mini-equalizer */
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.eq i {
+  width: 2px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: eq 0.6s var(--ease-out-soft) infinite alternate;
+}
+.eq i:nth-child(1) { height: 40%; animation-delay: 0ms; }
+.eq i:nth-child(2) { height: 90%; animation-delay: 120ms; }
+.eq i:nth-child(3) { height: 60%; animation-delay: 240ms; }
+
+@keyframes eq {
+  from { transform: scaleY(0.4); }
+  to   { transform: scaleY(1); }
+}
 
 /* ============ PILL ============ */
 .card-pill-wrap {
@@ -427,7 +545,7 @@ function goBack() {
   to   { transform: translateY(-50%) rotate(360deg); }
 }
 
-/* La vitesse est gérée via playbackRate en JS (pas de saut). */
+/* La vitesse est geree via playbackRate en JS (pas de saut). */
 
 .vinyl-grooves {
   position: absolute;
@@ -486,7 +604,7 @@ function goBack() {
     0 0 0 3px rgba(0,0,0,0.6);
 }
 
-/* === Variantes par état === */
+/* === Variantes par etat === */
 .card.current .vinyl-center {
   background: var(--ink-0);
   box-shadow:
@@ -591,5 +709,9 @@ function goBack() {
   .card { height: auto; min-height: 260px; }
   .top-title { font-size: 32px; }
   .vinyl { width: 70%; right: -30%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq i { animation: none; }
 }
 </style>
