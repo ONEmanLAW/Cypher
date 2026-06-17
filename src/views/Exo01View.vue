@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 import { useProgressStore } from '@/stores/progress'
@@ -129,36 +129,16 @@ function toggleMute() {
 }
 
 /* ============================================================
-   FULLSCREEN
+   FULLSCREEN — faux fullscreen CSS (pas de conflit avec F navigateur)
    ============================================================ */
-async function toggleFullscreen() {
-  if (!containerRef.value) return
-  if (!document.fullscreenElement) {
-    await containerRef.value.requestFullscreen()
-  } else {
-    await document.exitFullscreen()
-  }
-}
-
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
 }
 
 /* ============================================================
    TRY FLOW
    ============================================================ */
-async function exitFullscreenIfNeeded() {
-  if (document.fullscreenElement) {
-    try {
-      await document.exitFullscreen()
-    } catch (e) {
-      console.warn('exitFullscreen failed:', e)
-    }
-  }
-}
-
-async function triggerTryStop(idx) {
-  await exitFullscreenIfNeeded()
+function triggerTryStop(idx) {
   if (videoRef.value) videoRef.value.pause()
   activeTryIdx.value = idx
   tryFeedback.value = null
@@ -193,17 +173,6 @@ function goToPhase(idx) {
     videoRef.value.play()
   }
 }
-
-/* ============================================================
-   LIFECYCLE
-   ============================================================ */
-onMounted(() => {
-  document.addEventListener('fullscreenchange', onFullscreenChange)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('fullscreenchange', onFullscreenChange)
-})
 </script>
 
 <template>
@@ -467,7 +436,12 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   overflow: hidden;
 }
-.e01-video.fullscreen { border: none; }
+.e01-video.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border: none;
+}
 .e01-video-el {
   width: 100%;
   height: 100%;
@@ -650,7 +624,6 @@ onBeforeUnmount(() => {
 .e01-phase:hover { border-color: var(--line-hover); }
 .e01-phase.done { border-color: var(--line); }
 
-/* phase courante : border orange net (lisible, sert aussi de bouton) */
 .e01-phase.curr {
   border-color: var(--brand);
   box-shadow: inset 0 0 0 1px var(--brand);
