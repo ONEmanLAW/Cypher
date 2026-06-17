@@ -3,7 +3,7 @@
 
 ![Hero](public/readMeImg/hero.jpg)
 
-This project was born from my thesis : **« L'IA peut-elle transformer l'art du beatbox ? »** ([read the full paper (FR, PDF)](public/memory/memory.pdf)). Cypher is the practical answer to that question: an app that uses machine learning to listen to a beatboxer and guide their learning.
+This project was born from my thesis : **« L'IA peut-elle transformer l'art du beatbox ? »** ([read the full paper (FR, PDF)](public/memory/memory.pdf)), my final-year project of the third year of my bachelor's degree. Cypher is the practical answer to that question: an app that uses machine learning to listen to a beatboxer and guide their learning.
 
 Cypher breaks down each sound (kick, hi-hat, snare…) into progressive exercises: you listen to the demo, study the technique, then it's your turn to play. Sounds unlock one by one, with a visual direction inspired by GBB battles.
 
