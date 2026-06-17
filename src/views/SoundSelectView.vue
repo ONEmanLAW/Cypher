@@ -420,42 +420,43 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line-strong);
-  background: var(--ink-0);
-  color: var(--fg-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--fg-on-orange);
   cursor: pointer;
   transition:
     border-color var(--dur-fast) var(--ease-out-snap),
+    background-color var(--dur-fast) var(--ease-out-snap),
     color var(--dur-fast) var(--ease-out-snap),
     transform var(--dur-fast) var(--ease-out-snap);
 }
 .preview-btn svg { width: 10px; height: 12px; }
 .preview-btn:hover {
-  border-color: var(--brand);
-  color: var(--brand);
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
   transform: scale(1.06);
 }
 
-/* contraste sur cartes claires (avail / locked) */
-.preview-btn.avail,
-.preview-btn.locked {
-  background: var(--bone-0);
-  color: var(--ink-1);
+.preview-btn.current {
+  background: var(--ink-0);
+  color: var(--brand);
+  border-color: var(--ink-0);
+}
+.preview-btn.current:hover {
+  background: var(--ink-1);
   border-color: var(--ink-1);
 }
 
-/* etat lecture -> orange brand (--audio-recording) + glow du design system */
 .preview-btn.playing {
-  border-color: var(--brand);
-  color: var(--brand);
-  background: var(--ink-0);
-  box-shadow: var(--shadow-glow);
-}
-/* sur la carte courante (deja orange) : on inverse pour rester lisible */
-.preview-btn.current.playing {
+  background: var(--brand);
   border-color: var(--brand);
   color: var(--fg-on-orange);
-  background: var(--brand);
+  box-shadow: var(--shadow-glow);
+}
+.preview-btn.current.playing {
+  background: var(--ink-0);
+  color: var(--brand);
+  border-color: var(--brand);
   box-shadow: var(--shadow-glow);
 }
 
