@@ -2,7 +2,7 @@
 
 > Learn beatboxing like a game. An interactive academy to master the fundamental sounds, one cypher at a time.
 
-![Hero](public/readMeImg/hero.png)
+![Hero](public/readMeImg/hero.jpg)
 
 BeatPath breaks down each sound (kick, hi-hat, snare…) into progressive exercises: you listen to the demo, study the technique, then it's your turn to play. Sounds unlock one by one, with a visual direction inspired by GBB battles.
 
@@ -19,7 +19,8 @@ The core of the project: a Python model analyzes the audio captured from the mic
 - Vinyl transitions between screens
 
 ![Sound Select](public/readMeImg/sound-select.png)
-![Exercise](public/readMeImg/exercise.png)
+![Exercises](public/readMeImg/exercises.png)
+![Exercise N°6](public/readMeImg/exercise06.png)
 
 ## Stack
 
