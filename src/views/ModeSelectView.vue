@@ -32,7 +32,7 @@ const currentSectionName = computed(() => {
 })
 
 /* ---- campagne : placeholder tant que non implémentée ---- */
-const campaignLevel = 3
+const campaignLevel = 0
 const campaignTotal = 10
 const campaignProgress = campaignLevel / campaignTotal
 
