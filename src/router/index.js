@@ -5,6 +5,7 @@ import ModeSelectView from '@/views/ModeSelectView.vue'
 import SectionSelectView from '@/views/SectionSelectView.vue'
 import SoundSelectView from '@/views/SoundSelectView.vue'
 import ExercisesView from '@/views/ExercisesView.vue'
+import CampaignView from '@/views/CampaignView.vue'
 import Exo01View from '@/views/Exo01View.vue'
 import Exo02View from '@/views/Exo02View.vue'
 import Exo03View from '@/views/Exo03View.vue'
@@ -18,6 +19,7 @@ const router = createRouter({
     { path: '/',          name: 'mode-select',    component: ModeSelectView },
     { path: '/sections',  name: 'section-select', component: SectionSelectView },
     { path: '/sounds',    name: 'sound-select',   component: SoundSelectView },
+    { path: '/campaign',  name: 'campaign',       component: CampaignView },
     { path: '/exercises', name: 'exercises',      component: ExercisesView },
     { path: '/exo-01',    name: 'exo01',          component: Exo01View },
     { path: '/exo-02',    name: 'exo02',          component: Exo02View },
@@ -29,7 +31,7 @@ const router = createRouter({
 })
 
 /* Écrans de sélection libres ; les exos exigent un son sélectionné */
-const OPEN_PATHS = new Set(['/', '/sections', '/sounds'])
+const OPEN_PATHS = new Set(['/', '/sections', '/sounds', '/campaign'])
 
 router.beforeEach((to) => {
   if (OPEN_PATHS.has(to.path)) return true

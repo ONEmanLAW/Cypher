@@ -39,6 +39,10 @@ const campaignProgress = campaignLevel / campaignTotal
 function enterAcademy(e) {
   enterPanel('/sections', e.currentTarget, 'ACADEMY')
 }
+
+function enterCampaign(e) {
+  enterPanel('/campaign', e.currentTarget, 'CAMPAIGN')
+}
 </script>
 
 <template>
@@ -100,8 +104,8 @@ function enterAcademy(e) {
           </div>
         </button>
 
-        <!-- ============ CAMPAIGN (non cliquable) ============ -->
-        <div class="tile light disabled" aria-disabled="true">
+        <!-- ============ CAMPAIGN ============ -->
+        <button class="tile light" type="button" @click="enterCampaign">
           <div class="tile-title">CAMPAIGN</div>
           <div class="tile-hook">put them into practice.<br />play for real.</div>
 
@@ -120,7 +124,7 @@ function enterAcademy(e) {
               <div class="foot-bottom">next · level {{ campaignLevel + 1 }}</div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
     </div>
   </main>
@@ -232,6 +236,12 @@ function enterAcademy(e) {
   border-color: var(--orange-500);
 }
 .tile.dark:active { transform: translateY(0); box-shadow: var(--shadow-press); }
+.tile.light:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px var(--orange-500), 0 12px 0 -4px var(--ink-0);
+  border-color: var(--orange-500);
+}
+.tile.light:active { transform: translateY(0); box-shadow: var(--shadow-press); }
 .tile.disabled { cursor: default; }
 
 /* ---- titre ---- */
