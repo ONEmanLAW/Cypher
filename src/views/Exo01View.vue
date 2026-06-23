@@ -15,19 +15,23 @@ const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
 
 /* ============================================================
-   PHASES — mappées sur le temps réel de la vidéo (51s)
+   PHASES — mappées sur le temps réel de la vidéo (9:56 = 596s)
    ============================================================ */
 const phases = ref([
-  { name: 'Intro',     start: 0,    end: 8,    essai: false },
-  { name: 'Demo',      start: 8,    end: 18,   essai: false },
-  { name: 'Technique', start: 18,   end: 28,   essai: false },
-  { name: 'Try 1',     start: 28,   end: 34,   essai: true  },
-  { name: 'Try 2',     start: 34,   end: 40,   essai: true  },
-  { name: 'Try 3',     start: 40,   end: 46,   essai: true  },
-  { name: 'Recap',     start: 46,   end: 51,   essai: false },
+  { name: 'Intro',       start: 0,    end: 23,   essai: false },
+  { name: 'Benefits',    start: 23,   end: 50,   essai: false },
+  { name: 'Steps',       start: 50,   end: 300,  essai: false },
+  { name: 'Pro Tips',    start: 302,  end: 456,  essai: false },
+  { name: 'Practice',    start: 456,  end: 527,  essai: false },
+  { name: 'Try 1',       start: 527,  end: 543,  essai: true  },
+  { name: 'Try 2',       start: 543,  end: 546,  essai: true  },
+  { name: 'Try 3',       start: 546,  end: 550,  essai: true  },
+  { name: 'Try 4',       start: 550,  end: 555,  essai: true  },
+  { name: 'Try 5',       start: 555,  end: 590,  essai: true  },
+  { name: 'Conclusion',  start: 590,  end: 596,  essai: false },
 ])
 
-const VIDEO_SRC = '/videos/kick-drum-demo.mov'
+const VIDEO_SRC = '/videos/kick-drum-demo.mp4'
 
 /* ============================================================
    STATE
@@ -36,7 +40,7 @@ const videoRef = ref(null)
 const containerRef = ref(null)
 
 const currentTime = ref(0)
-const duration = ref(51)
+const duration = ref(596)
 const isPlaying = ref(false)
 const hasStarted = ref(false)
 const isFullscreen = ref(false)
@@ -58,7 +62,11 @@ const currentPhaseIdx = computed(() =>
 
 const phasesWithLayout = computed(() =>
   phases.value.map((p, i) => {
-    const width = ((p.end - p.start) / duration.value) * 100
+    // largeur proportionnelle au temps, mais bornée pour rester lisible
+    const raw = ((p.end - p.start) / duration.value) * 100
+    const width = p.essai
+      ? 0                       // les try ne s'étirent pas : largeur fixe
+      : Math.max(raw, 8)        // les phases longues : min 8%
     let state = 'todo'
     if (visitedPhases.value.has(i)) state = 'done'
     if (i === currentPhaseIdx.value) state = 'curr'
@@ -294,7 +302,9 @@ function goToPhase(idx) {
               v-for="p in phasesWithLayout"
               :key="p.idx"
               :class="['e01-phase', p.state, { essai: p.essai }]"
-              :style="{ flexBasis: p.width + '%' }"
+              :style="p.essai
+                ? { flex: '0 0 auto' }
+                : { flex: '1 1 ' + p.width + '%' }"
               type="button"
               @click="goToPhase(p.idx)"
             >
@@ -610,6 +620,7 @@ function goToPhase(idx) {
   display: flex;
   gap: 4px;
   width: 100%;
+  overflow-x: auto;
 }
 .e01-phase {
   position: relative;
@@ -619,7 +630,7 @@ function goToPhase(idx) {
   text-align: left;
   cursor: pointer;
   transition: border-color var(--dur-fast), background-color var(--dur-fast);
-  min-width: 0;
+  min-width: 72px;
 }
 .e01-phase:hover { border-color: var(--line-hover); }
 .e01-phase.done { border-color: var(--line); }
@@ -631,6 +642,12 @@ function goToPhase(idx) {
 }
 .e01-phase.curr .e01-phase-name { color: var(--brand); }
 
+.e01-phase.essai {
+  flex: 0 0 auto !important;
+  min-width: 64px;
+  white-space: nowrap;
+}
+
 .e01-phase-name {
   font-family: var(--font-display);
   font-size: 14px;
@@ -639,6 +656,7 @@ function goToPhase(idx) {
   color: var(--fg-primary);
   line-height: 1;
   margin-bottom: 4px;
+  white-space: nowrap;
 }
 .e01-phase-time {
   font-family: var(--font-mono);
