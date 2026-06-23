@@ -1,0 +1,375 @@
+%!Adobe-FontList 1.25
+%Locale:0x409
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:Invalid
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/AdobeFnt25.lst
+FileLength:8660
+FileModTime:787749131
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:Type1
+FontName:MinionPro-Regular
+FamilyName:Minion Pro
+StyleName:Regular
+MenuName:Minion Pro
+StyleBits:0
+WeightClass:400
+WidthClass:5
+AngleClass:0
+FullName:Minion Pro
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/MinionPro-Regular.otf
+DataFormat:sfntData
+UsesStandardEncoding:yes
+isCFF:yes
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:218640
+FileModTime:787574534
+DesignSize:110
+NameArray:0,Mac,4,Minion Pro
+NameArray:0,Win,1,Minion Pro
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-Bold
+FamilyName:Avenir Next
+StyleName:Bold
+MenuName:Avenir Next
+StyleBits:2
+WeightClass:700
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Bold
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:72
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Bold
+NameArray:0,Mac,4,Avenir Next Bold
+NameArray:0,Win,1,Avenir Next
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-BoldItalic
+FamilyName:Avenir Next
+StyleName:Bold Italic
+MenuName:Avenir Next
+StyleBits:0
+WeightClass:700
+WidthClass:5
+AngleClass:1
+FullName:Avenir Next Bold Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:372
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Bold Italic
+NameArray:0,Mac,4,Avenir Next Bold Italic
+NameArray:0,Win,1,Avenir Next
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-DemiBold
+FamilyName:Avenir Next
+StyleName:Demi Bold
+MenuName:Avenir Next Demi Bold
+StyleBits:2
+WeightClass:600
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Demi Bold
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:672
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Demi Bold
+NameArray:0,Mac,4,Avenir Next Demi Bold
+NameArray:0,Win,1,Avenir Next Demi Bold
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-DemiBoldItalic
+FamilyName:Avenir Next
+StyleName:Demi Bold Italic
+MenuName:Avenir Next Demi Bold
+StyleBits:3
+WeightClass:600
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Demi Bold Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:972
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Demi Bold Italic
+NameArray:0,Mac,4,Avenir Next Demi Bold Italic
+NameArray:0,Win,1,Avenir Next Demi Bold
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-Heavy
+FamilyName:Avenir Next
+StyleName:Heavy
+MenuName:Avenir Next Heavy
+StyleBits:0
+WeightClass:900
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Heavy
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:2472
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Heavy
+NameArray:0,Mac,4,Avenir Next Heavy
+NameArray:0,Win,1,Avenir Next Heavy
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-HeavyItalic
+FamilyName:Avenir Next
+StyleName:Heavy Italic
+MenuName:Avenir Next Heavy
+StyleBits:1
+WeightClass:900
+WidthClass:5
+AngleClass:1
+FullName:Avenir Next Heavy Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:2772
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Heavy Italic
+NameArray:0,Mac,4,Avenir Next Heavy Italic
+NameArray:0,Win,1,Avenir Next Heavy
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-Italic
+FamilyName:Avenir Next
+StyleName:Italic
+MenuName:Avenir Next
+StyleBits:1
+WeightClass:400
+WidthClass:5
+AngleClass:1
+FullName:Avenir Next Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:1272
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Italic
+NameArray:0,Mac,4,Avenir Next Italic
+NameArray:0,Win,1,Avenir Next
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-Medium
+FamilyName:Avenir Next
+StyleName:Medium
+MenuName:Avenir Next Medium
+StyleBits:0
+WeightClass:500
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Medium
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:1572
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Medium
+NameArray:0,Mac,4,Avenir Next Medium
+NameArray:0,Win,1,Avenir Next Medium
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-MediumItalic
+FamilyName:Avenir Next
+StyleName:Medium Italic
+MenuName:Avenir Next Medium
+StyleBits:1
+WeightClass:500
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Medium Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:1872
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Medium Italic
+NameArray:0,Mac,4,Avenir Next Medium Italic
+NameArray:0,Win,1,Avenir Next Medium
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-Regular
+FamilyName:Avenir Next
+StyleName:Regular
+MenuName:Avenir Next
+StyleBits:0
+WeightClass:400
+WidthClass:5
+AngleClass:0
+FullName:Avenir Next Regular
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:2172
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Regular
+NameArray:0,Mac,4,Avenir Next Regular
+NameArray:0,Win,1,Avenir Next
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-UltraLight
+FamilyName:Avenir Next
+StyleName:Ultra Light
+MenuName:Avenir Next Ultra Light
+StyleBits:0
+WeightClass:275
+WidthClass:5
+AngleClass:0
+FullName:AvenirNext-UltraLight
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:3072
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Ultra Light
+NameArray:0,Mac,4,Avenir Next Ultra Light
+NameArray:0,Win,1,Avenir Next Ultra Light
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:TrueType
+FontName:AvenirNext-UltraLightItalic
+FamilyName:Avenir Next
+StyleName:Ultra Light Italic
+MenuName:Avenir Next Ultra Light
+StyleBits:0
+WeightClass:275
+WidthClass:5
+AngleClass:1
+FullName:Avenir Next Ultra Light Italic
+WritingScript:Roman
+OutlineFileName:/Users/digital/Desktop/Mémoire Indesign /Document fonts/Avenir Next.ttc
+TTCOffset:3372
+DataFormat:sfntData
+hasSVG:no
+hasSBIX:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:4994280
+FileModTime:787574534
+NameArray:0,Mac,18,Avenir Next Ultra Light Italic
+NameArray:0,Mac,4,Avenir Next Ultra Light Italic
+NameArray:0,Win,1,Avenir Next Ultra Light
+NameArray:0,Win,16,Avenir Next
+%EndFont
+
