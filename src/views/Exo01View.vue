@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseWaveform from '@/components/ui/BaseWaveform.vue'
 import { useProgressStore } from '@/stores/progress'
+import { useBeatboxDetector } from '@/composables/useBeatboxDetector'
 import { useExoNavigation } from '@/composables/useExoNavigation'
 
 // Footer
@@ -13,6 +14,9 @@ const router = useRouter()
 const progress = useProgressStore()
 const { goToNext } = useExoNavigation()
 const currentSound = computed(() => progress.currentSound)
+
+const norm = (s) => String(s ?? '').trim().toLowerCase()
+const targetLabel = computed(() => currentSound.value?.label)
 
 /* ============================================================
    PHASES — mappées sur le temps réel de la vidéo (9:56 = 596s)
@@ -51,7 +55,77 @@ const showVolume = ref(false)
 const visitedPhases = ref(new Set([0]))
 const validatedTries = ref(new Set())
 const activeTryIdx = ref(null)
-const tryFeedback = ref(null)
+const tryFeedback = ref(null)   // 'good' | null
+
+/* ---------- FEEDBACK / SCORE ---------- */
+const score = ref(0)            // 0..100 — score de la TENTATIVE en cours (remplacé à chaque nouveau son)
+
+/* ============================================================
+   GESTION DU SCORE PAR TENTATIVE
+   - burst   : suite de prédictions rapprochées = 1 tentative → on garde le pic
+   - silence > SILENCE_GAP : la tentative est terminée
+   - un nouveau son remplace le score précédent
+   - après DISPLAY_HOLD, le score se reset à 0
+   ============================================================ */
+const SILENCE_GAP = 500     // ms — sépare deux tentatives
+const DISPLAY_HOLD = 3000   // ms — durée d'affichage avant reset
+
+let burstTimer = null       // actif = on est encore dans la même tentative
+let clearTimer = null       // hold d'affichage avant reset
+
+function clearScoreTimers() {
+  if (burstTimer) { clearTimeout(burstTimer); burstTimer = null }
+  if (clearTimer) { clearTimeout(clearTimer); clearTimer = null }
+}
+
+function resetScore() {
+  clearScoreTimers()
+  score.value = 0
+  tryFeedback.value = null
+}
+
+/* ============================================================
+   DÉTECTION — même composable que l'exo 02
+   ============================================================ */
+const { isListening, error, toggle, stop } = useBeatboxDetector({
+  targetLabel,
+  threshold: 0.1, // bas : on capte aussi les tentatives faibles / mauvais son
+  onHit: ({ label, confidence }) => onPrediction(label, confidence),
+})
+
+function onPrediction(label, confidence) {
+  // n'évalue que pendant un try actif
+  if (activeTryIdx.value === null) return
+  // on ne traite que le bon son
+  if (norm(label) !== norm(targetLabel.value)) return
+
+  const pct = Math.round(confidence * 100)
+
+  // un nouveau son annule le reset d'affichage en attente
+  if (clearTimer) { clearTimeout(clearTimer); clearTimer = null }
+
+  if (!burstTimer) {
+    // nouvelle tentative → on REMPLACE l'ancien score
+    score.value = pct
+  } else {
+    // même tentative → on garde le pic
+    if (pct > score.value) score.value = pct
+    clearTimeout(burstTimer)
+  }
+
+  // feedback aligné sur la tentative en cours
+  tryFeedback.value = score.value >= 70 ? 'good' : null
+
+  // fin de tentative après un silence, puis hold d'affichage
+  burstTimer = setTimeout(() => {
+    burstTimer = null
+    clearTimer = setTimeout(() => {
+      score.value = 0
+      tryFeedback.value = null
+      clearTimer = null
+    }, DISPLAY_HOLD)
+  }, SILENCE_GAP)
+}
 
 /* ============================================================
    COMPUTED
@@ -107,9 +181,12 @@ function onTimeUpdate() {
   const idx = currentPhaseIdx.value
   if (idx !== -1) visitedPhases.value.add(idx)
 
-  const phase = phases.value[idx]
-  if (phase && phase.essai && !validatedTries.value.has(idx) && activeTryIdx.value !== idx) {
-    triggerTryStop(idx)
+  // arrêt fiable : 1er try non validé dont le start est dépassé
+  if (activeTryIdx.value === null) {
+    const tIdx = phases.value.findIndex(
+      (p, i) => p.essai && !validatedTries.value.has(i) && currentTime.value >= p.start
+    )
+    if (tIdx !== -1) triggerTryStop(tIdx)
   }
 }
 
@@ -149,20 +226,15 @@ function toggleFullscreen() {
 function triggerTryStop(idx) {
   if (videoRef.value) videoRef.value.pause()
   activeTryIdx.value = idx
-  tryFeedback.value = null
-}
-
-function validateTry() {
-  if (activeTryIdx.value === null) return
-  validatedTries.value.add(activeTryIdx.value)
-  tryFeedback.value = 'good'
+  resetScore()
+  if (!isListening.value) toggle()   // on s'assure que le micro écoute
 }
 
 function continueAfterTry() {
   if (activeTryIdx.value === null) return
   validatedTries.value.add(activeTryIdx.value)
   activeTryIdx.value = null
-  tryFeedback.value = null
+  resetScore()
   if (videoRef.value) videoRef.value.play()
 }
 
@@ -178,9 +250,15 @@ function goToPhase(idx) {
     triggerTryStop(idx)
   } else {
     activeTryIdx.value = null
+    resetScore()
     videoRef.value.play()
   }
 }
+
+onBeforeUnmount(() => {
+  clearScoreTimers()
+  stop()
+})
 </script>
 
 <template>
@@ -322,13 +400,25 @@ function goToPhase(idx) {
         <div v-if="activeTryIdx !== null" class="e01-essai-panel">
           <div class="e01-essai-block">
             <div class="e01-essai-label">Your turn</div>
-            <div class="e01-essai-title">Do the kick sound</div>
+            <div class="e01-essai-title">Do the {{ currentSound?.name }} sound</div>
           </div>
           <div class="e01-essai-wave">
             <BaseWaveform :bar-count="56" />
           </div>
           <div class="e01-essai-actions">
-            <div v-if="tryFeedback === 'good'" class="e01-feedback good">Pretty good</div>
+            <div class="e01-score">
+              <div
+                class="e01-score-num"
+                :class="{ good: score >= 70, mid: score >= 40 && score < 70 }"
+              >
+                {{ score }}<span>%</span>
+              </div>
+              <div class="e01-score-label">
+                <template v-if="error">⚠ {{ error }}</template>
+                <template v-else-if="!isListening">mic off</template>
+                <template v-else>{{ currentSound?.name }}</template>
+              </div>
+            </div>
             <button class="footer-cta" type="button" @click="continueAfterTry">
               Continue →
             </button>
@@ -345,7 +435,15 @@ function goToPhase(idx) {
         <BaseTips />
       </div>
       <div class="exo-footer-actions">
-        <span class="footer-mic"><span class="dot" /> Mic on</span>
+        <button
+          class="footer-mic"
+          :class="{ active: isListening }"
+          type="button"
+          @click="toggle"
+        >
+          <span class="dot" />
+          {{ isListening ? 'Mic on' : 'Mic off' }}
+        </button>
         <button class="footer-cta" type="button" @click="goToNext">Skip →</button>
       </div>
     </footer>
@@ -723,17 +821,25 @@ function goToPhase(idx) {
   align-items: center;
   gap: 12px;
 }
-.e01-feedback {
+
+.e01-score { text-align: center; min-width: 90px; }
+.e01-score-num {
   font-family: var(--font-display);
-  font-size: 14px;
-  letter-spacing: var(--ls-tight);
-  text-transform: uppercase;
-  padding: 6px 12px;
-  border-radius: 2px;
+  font-size: 40px;
+  line-height: 1;
+  color: var(--state-bad);
+  transition: color var(--dur-base);
 }
-.e01-feedback.good {
-  background: var(--state-good);
-  color: var(--ink-0);
+.e01-score-num.mid { color: var(--state-warn); }
+.e01-score-num.good { color: var(--state-good); }
+.e01-score-num span { font-size: 18px; margin-left: 2px; }
+.e01-score-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-top: 4px;
 }
 
 .exo-footer {
@@ -749,6 +855,7 @@ function goToPhase(idx) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 4px;
@@ -756,15 +863,31 @@ function goToPhase(idx) {
   font-size: 12px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
 }
 .footer-mic .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  background: var(--ink-6);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.footer-mic.active {
+  color: var(--fg-primary);
+  border-color: var(--state-good);
+}
+.footer-mic.active .dot {
   background: var(--state-good);
   box-shadow: 0 0 8px 0 var(--state-good);
+  animation: mic-pulse 1.2s ease-in-out infinite;
 }
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
 .footer-cta {
   display: inline-flex;
   align-items: center;
